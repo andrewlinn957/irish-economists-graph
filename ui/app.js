@@ -7,7 +7,7 @@ let visibleNodes = new Set(['person']);
 let visibleLabels = new Set(['person','institution','topic']);
 let visibleEdges = new Set(['coauthor','affiliation','topic','topic_pair','shared']);
 let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewClusters = new Map(), activeCluster = null, featuredClusters = new Set();
-let overviewData = null, overviewMode = false, clusterDetailsBackup = null;
+let overviewData = null, scopeData = null, overviewMode = false, clusterDetailsBackup = null;
 let drillStack = [], drillChildren = [];
 const lensEdges = {coauthor:new Set(['coauthor']), topic:new Set(['topic','topic_pair']), institution:new Set(['affiliation'])};
 const palette = ['#2e7d5b','#be6a42','#5c76b7','#9a669f','#a88727','#408d9b','#8c694d','#6b8d40','#b45271','#4b7691','#9067b0','#b2784d','#418078','#967a35','#6576a1','#907c69'];
@@ -15,6 +15,42 @@ function nodeId(n) { return typeof n === 'object' ? n.id : n; }
 function communityFields(id) { const n=overviewClusters.get(id); return n ? {communities:n.communities} : {}; }
 function clusterOf(n) { return n.communities?.[$('#cluster-lens').value]?.id || 'unconnected'; }
 function clusterLabel(n) { return n.communities?.[$('#cluster-lens').value]?.label || 'Unconnected'; }
+function countryMatches(country, choice=$('#country-filter').value) {
+  if(choice==='all')return true;
+  if(choice==='island')return country==='Ireland'||country==='Northern Ireland';
+  if(choice==='uk')return ['England','Scotland','Wales','Northern Ireland','United Kingdom (unclassified)'].includes(country);
+  return country===choice;
+}
+function refreshInstitutions() {
+  if(!overviewData)return;
+  const selected=$('#institution-filter').value, term=$('#institution-search').value.trim().toLocaleLowerCase();
+  const institutions=overviewData.nodes.filter(n=>n.kind==='institution'&&countryMatches(n.country));
+  const matching=institutions.filter(n=>n.label.toLocaleLowerCase().includes(term))
+    .sort((a,b)=>a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
+  $('#institution-filter').innerHTML='<option value="">All institutions in selected country</option>'+
+    matching.map(n=>`<option value="${safe(n.id)}">${safe(n.label)}</option>`).join('');
+  $('#institution-filter').value=matching.some(n=>n.id===selected)?selected:'';
+  $('#institution-count').textContent=`${matching.length.toLocaleString()} of ${institutions.length.toLocaleString()} institutions`;
+}
+function scopedOverview() {
+  const institution=$('#institution-filter').value;
+  const institutions=new Set(overviewData.nodes.filter(n=>n.kind==='institution'&&countryMatches(n.country)&&(!institution||n.id===institution)).map(n=>n.id));
+  const people=new Set();
+  for(const edge of overviewData.links)if(edge.type==='affiliation'){
+    const a=nodeId(edge.source),b=nodeId(edge.target);
+    if(institutions.has(a))people.add(b);
+    if(institutions.has(b))people.add(a);
+  }
+  const topics=new Set();
+  for(const edge of overviewData.links)if(edge.type==='topic'){
+    const a=nodeId(edge.source),b=nodeId(edge.target);
+    if(people.has(a))topics.add(b);
+    if(people.has(b))topics.add(a);
+  }
+  const ids=new Set([...institutions,...people,...topics]);
+  return {nodes:overviewData.nodes.filter(n=>ids.has(n.id)),
+    links:overviewData.links.filter(e=>ids.has(nodeId(e.source))&&ids.has(nodeId(e.target)))};
+}
 function hash(s) { let h=2166136261; for(const ch of s) h=Math.imul(h^ch.charCodeAt(0),16777619); return h>>>0; }
 function clusterColour(n) {
   if ($('#cluster-lens').value === 'none') return {person:'#2e7d5b',institution:'#5c76b7',topic:'#be6a42'}[n.kind] || '#718277';
@@ -147,7 +183,7 @@ function updateLegend() {
 }
 function renderClusterDetails(id) {
   const lens = $('#cluster-lens').value;
-  const sourceNodes = overviewData?.nodes?.length ? overviewData.nodes : currentNodes;
+  const sourceNodes = scopeData?.nodes?.length ? scopeData.nodes : currentNodes;
   const members = sourceNodes.filter(n => n.communities?.[lens]?.id === id);
   const shown = currentNodes.filter(n => nodeVisible(n) && n.communities?.[lens]?.id === id);
   const core = members.filter(n => !n.communities[lens].derived);
@@ -175,7 +211,7 @@ function nestedCommunities(ids, lens, depth) {
   // Local modularity optimisation on the selected lens's induced subgraph.
   // A rising resolution exposes finer structure at each depth; IDs remain view-only.
   const vertices=[...ids].sort(), allowed=lensEdges[lens], adjacency=new Map(vertices.map(id=>[id,new Map()]));
-  for(const e of overviewData.links) {
+  for(const e of scopeData.links) {
     const a=nodeId(e.source), b=nodeId(e.target);
     if(!allowed?.has(e.type)||a===b||!adjacency.has(a)||!adjacency.has(b))continue;
     const w=Math.sqrt(Math.min(Number(e.weight)||1,12));
@@ -208,7 +244,7 @@ function nestedCommunities(ids, lens, depth) {
   const groups=new Map();
   for(const id of vertices){const key=group.get(id);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(id);}
   if(groups.size<2||groups.size>Math.max(20,vertices.length/2))return [];
-  const records=new Map(overviewData.nodes.map(n=>[n.id,n]));
+  const records=new Map(scopeData.nodes.map(n=>[n.id,n]));
   const representativeKind={coauthor:'person',topic:'topic',institution:'institution'}[lens];
   return [...groups.values()].sort((a,b)=>b.length-a.length||a[0].localeCompare(b[0])).map((members,i)=>{
     const options=members.filter(id=>records.get(id)?.kind===representativeKind);
@@ -221,12 +257,12 @@ function renderDrill() {
   drillChildren=nestedCommunities(parent.ids,lens,drillStack.length);
   const assignment=new Map();
   drillChildren.forEach(g=>g.ids.forEach(id=>assignment.set(id,g)));
-  const nodes=overviewData.nodes.filter(n=>parent.ids.has(n.id)&&visibleNodes.has(n.kind)).map(n=>{
+  const nodes=scopeData.nodes.filter(n=>parent.ids.has(n.id)&&visibleNodes.has(n.kind)).map(n=>{
     const child=assignment.get(n.id);
     return {...n,communities:{...n.communities,[lens]:{id:child?.id||parent.id,label:child?.label||parent.label,derived:false}}};
   });
   const ids=new Set(nodes.map(n=>n.id));
-  const links=overviewData.links.filter(e=>ids.has(nodeId(e.source))&&ids.has(nodeId(e.target)))
+  const links=scopeData.links.filter(e=>ids.has(nodeId(e.source))&&ids.has(nodeId(e.target)))
     .map(e=>({...e,source:nodeId(e.source),target:nodeId(e.target)}));
   renderGraph(nodes,links,true);
   const crumb=drillStack.map(g=>safe(g.label)).join(' → ');
@@ -377,19 +413,20 @@ function showEdge(l) {
 function renderOverviewSlice() {
   if (!overviewData) return;
   drillStack=[];drillChildren=[];
+  scopeData=scopedOverview();
   const lens = $('#cluster-lens').value;
   $('#cluster-count-control').hidden = lens === 'none';
   if (lens === 'none') {
-    const nodes = overviewData.nodes.filter(n => visibleNodes.has(n.kind)).map(n => ({...n}));
+    const nodes = scopeData.nodes.filter(n => visibleNodes.has(n.kind)).map(n => ({...n}));
     const selectedIds = new Set(nodes.map(n => n.id));
-    const links = overviewData.links.filter(l => selectedIds.has(nodeId(l.source)) && selectedIds.has(nodeId(l.target)))
+    const links = scopeData.links.filter(l => selectedIds.has(nodeId(l.source)) && selectedIds.has(nodeId(l.target)))
       .map(l => ({...l, source:nodeId(l.source), target:nodeId(l.target)}));
     renderGraph(nodes, links, true);
-    details.innerHTML = `<h1>Irish economics research</h1><p>Unclustered network · ${nodes.length.toLocaleString()} visible nodes · ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left panel to show institutions or topics, or select a clustering lens. Select a node or link to inspect its evidence.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
+    details.innerHTML = `<h1>UK and Ireland economics research</h1><p>${safe($('#country-filter').selectedOptions[0].text)} · ${nodes.length.toLocaleString()} visible nodes · ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left panel to choose a country or institution, show institutions or topics, or select a clustering lens. Select a node or link to inspect its evidence.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
     return;
   }
   const sizes = new Map();
-  for (const n of overviewData.nodes) {
+  for (const n of scopeData.nodes) {
     const membership = n.communities?.[lens];
     if (!membership || membership.derived || membership.id === 'unconnected') continue;
     sizes.set(membership.id, (sizes.get(membership.id) || 0) + 1);
@@ -401,22 +438,23 @@ function renderOverviewSlice() {
   const count = Number(slider.value);
   $('#cluster-count-value').textContent = `${count} of ${ranked.length}`;
   const chosen = new Set(ranked.slice(0, count).map(([id]) => id));
-  const nodes = overviewData.nodes.filter(n => visibleNodes.has(n.kind) && chosen.has(n.communities?.[lens]?.id)).map(n => ({...n}));
+  const nodes = scopeData.nodes.filter(n => visibleNodes.has(n.kind) && chosen.has(n.communities?.[lens]?.id)).map(n => ({...n}));
   const ids = new Set(nodes.map(n => n.id));
-  const links = overviewData.links.filter(l => ids.has(nodeId(l.source)) && ids.has(nodeId(l.target)))
+  const links = scopeData.links.filter(l => ids.has(nodeId(l.source)) && ids.has(nodeId(l.target)))
     .map(l => ({...l, source:nodeId(l.source), target:nodeId(l.target)}));
   renderGraph(nodes, links, true);
-  details.innerHTML = `<h1>Irish economics research</h1><p>Showing ${count} of ${ranked.length} ${safe(lens)} communities, with ${nodes.length.toLocaleString()} people, institutions and topics and ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left slider to change how many communities appear. Search and focused views still cover the full dataset. Select a node or link to inspect its evidence. Colours and circles show algorithmic communities, not asserted group membership.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
+  details.innerHTML = `<h1>UK and Ireland economics research</h1><p>${safe($('#country-filter').selectedOptions[0].text)} · showing ${count} of ${ranked.length} ${safe(lens)} communities, with ${nodes.length.toLocaleString()} people, institutions and topics and ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left slider to change how many communities appear. Search and focused views still cover the full dataset. Select a node or link to inspect its evidence. Colours and circles show algorithmic communities, not asserted group membership.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
 }
 async function openOverview(mode = 'people') {
   showGraphView();
   results.hidden = true; $('#loading').hidden = false;
   try {
-    const d = await get(mode === 'topics' ? '/api/topic-overview' : '/api/overview');
+    const d = await get(mode === 'topics' ? '/api/topic-overview' : `/api/overview?country=${encodeURIComponent($('#country-filter').value)}`);
     current = null;
     if(mode==='people') {
       overviewData = d;
       overviewClusters = new Map(d.nodes.map(n=>[n.id,n]));
+      refreshInstitutions();
       renderOverviewSlice();
     } else {
       renderGraph(d.nodes, d.links);
@@ -444,13 +482,13 @@ async function open(type, id) {
         ...d.shared.map(x => ({source:d.centre.id,target:x.id,type:'shared',weight:x.years.length,institution:x.institution,paper_ids:[...new Set([...x.paper_ids_a,...x.paper_ids_b])]}))];
       details.innerHTML = `<h1>${safe(d.centre.name)}</h1>${d.centre.orcid && approvedUrl(d.centre.orcid) ? `<a class="link" href="${safe(d.centre.orcid)}" target="_blank" rel="noopener">ORCID ↗</a>` : ''}
         <p>${d.collaborators.length} displayed collaborators · ${d.affiliations.length} publication affiliations · ${d.topics.length} topics</p>
-        ${paperList(d.papers)}<h2>Affiliations on papers</h2>${d.affiliations.map(x => `<button class="item" data-open="institution" data-id="${safe(x.id)}">${safe(x.name)}<span class="meta">${x.target ? 'Irish target · ' : ''}${safe(x.weight)} papers</span></button>`).join('') || '<p>No resolved institution in these authorships.</p>'}
+        ${paperList(d.papers)}<h2>Affiliations on papers</h2>${d.affiliations.map(x => `<button class="item" data-open="institution" data-id="${safe(x.id)}">${safe(x.name)}<span class="meta">${x.target ? 'In-scope institution · ' : ''}${safe(x.weight)} papers</span></button>`).join('') || '<p>No resolved institution in these authorships.</p>'}
         <h2>Topics</h2>${d.topics.map(x => `<button class="item" data-open="topic" data-id="${safe(x.id)}">${safe(x.name)}<span class="meta">${safe(x.weight)} papers</span></button>`).join('')}`;
     } else if (type === 'institution') {
       nodes = [{id:d.centre.id,label:d.centre.name,kind:'institution',...communityFields(d.centre.id)},...d.people.map(x => ({id:x.id,label:x.name,kind:'person',...communityFields(x.id)}))];
       links = d.people.map(x => ({source:d.centre.id,target:x.id,type:'affiliation',weight:x.weight,paper_ids:x.paper_ids,dates:x.dates,raw_affiliations:x.raw_affiliations}));
       details.innerHTML = `<h1>${safe(d.centre.name)}</h1>${d.centre.ror && approvedUrl(d.centre.ror) ? `<a class="link" href="${safe(d.centre.ror)}" target="_blank" rel="noopener">ROR ↗</a>` : ''}
-        <p>${d.people.length} displayed publication-affiliated authors${d.centre.target ? ' · Irish target institution' : ''}</p>${paperList(d.papers)}
+        <p>${d.people.length} displayed publication-affiliated authors${d.centre.target ? ' · In-scope institution' : ''}</p>${paperList(d.papers)}
         <h2>People</h2>${d.people.map(x => `<button class="item" data-open="person" data-id="${safe(x.id)}">${safe(x.name)}<span class="meta">${safe(x.weight)} papers</span></button>`).join('')}`;
     } else if (type === 'topic') {
       nodes = [{id:d.centre.id,label:d.centre.name,kind:'topic',...communityFields(d.centre.id)},...d.related.map(x => ({id:x.id,label:x.name,kind:'topic',...communityFields(x.id)}))];
@@ -509,7 +547,7 @@ details.addEventListener('click', e => {
   const drill=e.target.closest('[data-drill-start]');
   if(drill && activeCluster && overviewData){
     const lens=$('#cluster-lens').value;
-    const members=overviewData.nodes.filter(n=>n.communities?.[lens]?.id===activeCluster);
+    const members=scopeData.nodes.filter(n=>n.communities?.[lens]?.id===activeCluster);
     drillStack=[{id:activeCluster,label:members[0]?.communities?.[lens]?.label||'Cluster',ids:new Set(members.map(n=>n.id))}];
     renderDrill();if(window.innerWidth<=850)setMenu(false);return;
   }
@@ -549,8 +587,19 @@ $('#cluster-lens').addEventListener('change',()=>{
   if(clusterDetailsBackup!==null){details.innerHTML=clusterDetailsBackup;clusterDetailsBackup=null}
   if(overviewMode)renderOverviewSlice();else{updateStyle();applyClusterLayout()}
 });
-$('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${overviewData ? new Set(overviewData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
+$('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${scopeData ? new Set(scopeData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
 $('#cluster-count').addEventListener('change',()=>{if(overviewMode)renderOverviewSlice()});
+$('#country-filter').addEventListener('change',()=>{
+  $('#institution-search').value='';$('#institution-filter').value='';refreshInstitutions();
+  openOverview();
+});
+$('#institution-search').addEventListener('input',()=>{
+  const previous=$('#institution-filter').value;refreshInstitutions();
+  if(previous&&!$('#institution-filter').value&&overviewMode)renderOverviewSlice();
+});
+$('#institution-filter').addEventListener('change',()=>{
+  if(overviewMode)renderOverviewSlice();else openOverview();
+});
 $('#legend').addEventListener('click',e=>{
   if(drillStack.length){
     if(e.target.closest('[data-drill-back]')){

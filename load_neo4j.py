@@ -25,7 +25,7 @@ COUNTS = {
 def query(statement, auth):
     req = Request(ENDPOINT, json.dumps({'statement': statement}).encode(),
                   {'Authorization': f'Basic {auth}', 'Content-Type': 'application/json'})
-    with urlopen(req, timeout=300) as response:
+    with urlopen(req, timeout=1800) as response:
         payload = json.load(response)
     if payload.get('errors'):
         raise RuntimeError(payload['errors'])
@@ -36,8 +36,12 @@ def query(statement, auth):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'output')
+    parser.add_argument('--namespace', choices=['Irish', 'UKIE'], default='Irish',
+                        help='Keep the UK and Ireland candidate separate from the existing Irish layer')
     parser.add_argument('--replace', action='store_true', help='Explicitly replace Irish labels and edges')
     args = parser.parse_args()
+    labels = [label.replace('Irish', args.namespace) for label in LABELS]
+    counts = {label.replace('Irish', args.namespace): source for label, source in COUNTS.items()}
     if not args.replace:
         parser.error('Pass --replace to modify Neo4j')
     output = args.output_dir.resolve()
@@ -57,7 +61,7 @@ def main():
         subprocess.run(['docker', 'cp', str(output / f'{name}.csv'),
                         f'{CONTAINER}:{IMPORT_DIR}/{name}.csv'], check=True)
     print('Staged CSV counts:', expected, flush=True)
-    for label in LABELS:
+    for label in labels:
         before = query(f'MATCH (n:{label}) RETURN count(n) AS count', auth)[0]['count']
         print(f'Replacing {label}: {before} existing', flush=True)
         while True:
@@ -66,11 +70,13 @@ def main():
                 break
         print(f'Cleared {label}', flush=True)
     script = (ROOT / 'neo4j-import.cypher').read_text()
+    if args.namespace == 'UKIE':
+        script = script.replace('Irish', 'UKIE').replace('IRISH_', 'UKIE_').replace('irish_', 'ukie_')
     statements = [part.strip() for part in script.split(';') if part.strip()]
     for number, statement in enumerate(statements, 1):
         query(statement, auth)
         print(f'Imported statement {number}/{len(statements)}', flush=True)
-    for label, source in COUNTS.items():
+    for label, source in counts.items():
         actual = query(f'MATCH (n:{label}) RETURN count(n) AS count', auth)[0]['count']
         if actual != expected[source]:
             raise RuntimeError(f'{label}: expected {expected[source]}, got {actual}')
@@ -83,10 +89,12 @@ def main():
         'IRISH_TOPIC_COOCCURS': 'topic_cooccurs',
     }
     for rel, source in relations.items():
+        if args.namespace == 'UKIE':
+            rel = rel.replace('IRISH_', 'UKIE_')
         actual = query(f'MATCH ()-[r:{rel}]->() RETURN count(r) AS count', auth)[0]['count']
         if actual != expected[source]:
             raise RuntimeError(f'{rel}: expected {expected[source]}, got {actual}')
-    print('All Irish node and relationship counts reconcile.', flush=True)
+    print(f'All {args.namespace} node and relationship counts reconcile.', flush=True)
 
 
 if __name__ == '__main__':

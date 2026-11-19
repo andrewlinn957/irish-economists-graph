@@ -15,7 +15,8 @@ LOAD CSV WITH HEADERS FROM 'file:///irish-economists-graph/institutions.csv' AS 
 CALL (row) {
   MERGE (i:IrishInstitution {id: row.institution_id})
   SET i.name = row.name, i.ror = row.ror,
-      i.country_code = row.country_code, i.target = (row.target = '1')
+      i.country_code = row.country_code, i.country = row.country,
+      i.target = (row.target = '1')
 } IN TRANSACTIONS OF 500 ROWS;
 
 LOAD CSV WITH HEADERS FROM 'file:///irish-economists-graph/papers.csv' AS row

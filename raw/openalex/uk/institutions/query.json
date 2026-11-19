@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://api.openalex.org/institutions",
+  "params": {
+    "filter": "country_code:GB",
+    "per-page": 200,
+    "page": 1,
+    "select": "id,display_name,ror,geo,country_code"
+  },
+  "retrieved": "2026-11-19"
+}

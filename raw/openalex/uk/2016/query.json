@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://api.openalex.org/works",
+  "params": {
+    "filter": "from_publication_date:2016-01-01,to_publication_date:2016-12-31,authorships.institutions.country_code:GB,primary_topic.field.id:20,type:article|preprint|report",
+    "per-page": 200,
+    "page": 1,
+    "select": "id,title,publication_date,doi,type,authorships,primary_topic,topics,ids,is_retracted"
+  },
+  "retrieved": "2026-11-19"
+}

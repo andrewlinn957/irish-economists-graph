@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Irish economists</title>
+  <title>UK and Ireland economists</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/force-graph.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
 <header>
-  <div class="brand">Irish economists <span>2012–2026</span></div>
+  <div class="brand">UK and Ireland economists <span>2012–2026</span></div>
   <button id="overview" class="topbutton active" aria-pressed="true" title="Show economist network">Graph</button>
   <button id="matchmaker-tab" class="topbutton" aria-pressed="false" title="Find a potential co-author">Matchmaker</button>
   <div class="searchbox">
@@ -28,6 +28,20 @@
     <nav id="controls" aria-label="Graph controls" hidden>
       <div class="controls-head"><strong>Graph controls</strong><button id="menu-close" aria-label="Close graph controls">×</button></div>
       <div class="controls-content">
+        <section class="control-section">
+          <h2>Place and institution</h2>
+          <label for="country-filter">Country</label>
+          <select id="country-filter" aria-label="Filter graph by country">
+            <option value="island" selected>Ireland (island)</option><option value="Ireland">Republic of Ireland</option>
+            <option value="Northern Ireland">Northern Ireland</option><option value="England">England</option>
+            <option value="Scotland">Scotland</option><option value="Wales">Wales</option>
+            <option value="uk">United Kingdom</option><option value="all">UK and Ireland</option>
+          </select>
+          <label for="institution-search">Find institution by name</label>
+          <input id="institution-search" type="search" placeholder="Filter institution names" autocomplete="off">
+          <select id="institution-filter" aria-label="Select institution"><option value="">All institutions in selected country</option></select>
+          <p id="institution-count" class="control-hint"></p>
+        </section>
         <section class="control-section">
           <h2>Clusters</h2>
           <label for="cluster-lens">Cluster by</label>
@@ -69,7 +83,7 @@
   <section id="matchmaker-view" hidden>
     <div class="matchmaker-shell">
       <h1>Find a collaborator</h1>
-      <p>Search for a researcher in the Irish economics corpus.</p>
+      <p>Search for a researcher in the UK and Ireland economics corpus.</p>
       <div class="match-search-wrap">
         <input id="match-search" type="search" placeholder="Academic name" autocomplete="off" aria-label="Academic name">
         <div id="match-picks" hidden></div>
@@ -79,7 +93,7 @@
   </section>
   <aside id="inspector">
     <div class="selection-head"><div class="eyebrow">Selection</div><button id="inspector-close" type="button" aria-label="Hide selection panel">Hide selection</button></div>
-    <div id="details"><h1>Irish economics research</h1><p>Select a node or link to inspect its source papers.</p></div>
+    <div id="details"><h1>UK and Ireland economics research</h1><p>Select a node or link to inspect its source papers.</p></div>
   </aside>
 </main>
 </body>

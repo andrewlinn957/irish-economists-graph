@@ -4,6 +4,7 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -11,7 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 RAW = ROOT / 'raw' / 'openalex'
 BACKFILL = RAW / 'backfill-2012'
-OUT = ROOT / 'output'
+UK_RAW = RAW / 'uk'
+OUT = Path(os.environ.get('ECON_GRAPH_OUTPUT', ROOT / 'output'))
 
 
 def read_work(path):
@@ -30,7 +32,9 @@ def main():
     eligible = {r['paper_id'] for r in csv.DictReader((OUT / 'papers.csv').open())}
     seen, topics, links = set(), {}, []
     pairs = defaultdict(set)
-    raw_files = sorted(RAW.glob('works-*.json.gz')) + sorted(RAW.glob('extra-*.json.gz')) + sorted(BACKFILL.glob('works-*.json.gz')) + sorted(BACKFILL.glob('extra-*.json.gz'))
+    raw_files = (sorted(RAW.glob('works-*.json.gz')) + sorted(RAW.glob('extra-*.json.gz')) +
+                 sorted(BACKFILL.glob('works-*.json.gz')) + sorted(BACKFILL.glob('extra-*.json.gz')) +
+                 sorted(UK_RAW.glob('[0-9][0-9][0-9][0-9]/works-*.json.gz')))
     for path in raw_files:
         payload = read_work(path)
         for work in payload['results']:

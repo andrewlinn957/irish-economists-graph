@@ -8,6 +8,7 @@ import csv
 import gzip
 import hashlib
 import json
+import os
 import re
 import time
 import unicodedata
@@ -23,7 +24,8 @@ import requests
 ROOT = Path(__file__).resolve().parent
 RAW = ROOT / "raw" / "openalex"
 BACKFILL = RAW / "backfill-2012"
-OUT = ROOT / "output"
+UK_RAW = RAW / "uk"
+OUT = Path(os.environ.get("ECON_GRAPH_OUTPUT", ROOT / "output"))
 START = "2012-01-01"
 END = "2026-11-18"
 ORIGINAL_START = "2016-11-18"
@@ -121,15 +123,146 @@ def fetch(extra=False, backfill=False):
     print(f"fetch complete: {page} pages", flush=True)
 
 
+def fetch_uk():
+    """Archive UK-affiliated economics-primary works, partitioned by year."""
+    session = requests.Session()
+    session.headers["User-Agent"] = "UKIrelandEconomistsGraph/0.1 (research metadata; polite sequential requests)"
+    for year in range(2012, 2027):
+        folder = UK_RAW / str(year)
+        folder.mkdir(parents=True, exist_ok=True)
+        query = {"filter": (
+            f"from_publication_date:{year}-01-01,"
+            f"to_publication_date:{END if year == 2026 else str(year) + '-12-31'},"
+            "authorships.institutions.country_code:GB,primary_topic.field.id:20,"
+            "type:article|preprint|report"),
+            "per-page": 200, "page": 1,
+            "select": "id,title,publication_date,doi,type,authorships,primary_topic,topics,ids,is_retracted"}
+        manifest = folder / "query.json"
+        frozen = {"endpoint": BASE + "/works", "params": query}
+        if manifest.exists():
+            recorded = json.loads(manifest.read_text())
+            if recorded.get("endpoint") != frozen["endpoint"] or recorded.get("params") != query:
+                raise RuntimeError(f"UK query changed for {year}; use a new archive directory")
+        else:
+            save_json(manifest, {**frozen, "retrieved": date.today().isoformat()})
+        page = 1
+        while True:
+            target = folder / f"works-{page:04d}.json.gz"
+            if target.exists():
+                with gzip.open(target, "rt", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            else:
+                payload, url = api_get(session, "/works", query)
+                payload["_retrieval_url"] = url
+                with gzip.open(target, "wt", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False)
+                print(f"UK {year} page {page}: {len(payload['results'])} works", flush=True)
+            total = payload.get("meta", {}).get("count", 0)
+            if total > 10000:
+                raise RuntimeError(f"UK {year}: {total} results exceed page pagination limit")
+            if page * 200 >= total or not payload.get("results"):
+                break
+            page += 1
+            query["page"] = page
+            time.sleep(0.15)
+        print(f"UK {year}: {total} candidate works archived", flush=True)
+
+
+def fetch_uk_institutions():
+    """Archive OpenAlex UK institution geography to classify the four nations."""
+    folder = UK_RAW / "institutions"
+    folder.mkdir(parents=True, exist_ok=True)
+    session = requests.Session()
+    session.headers["User-Agent"] = "UKIrelandEconomistsGraph/0.1 (research metadata; polite sequential requests)"
+    query = {"filter": "country_code:GB", "per-page": 200, "page": 1,
+             "select": "id,display_name,ror,geo,country_code"}
+    manifest = folder / "query.json"
+    if manifest.exists():
+        recorded = json.loads(manifest.read_text())
+        if recorded.get("params") != query:
+            raise RuntimeError("UK institution query changed; use a new archive directory")
+    else:
+        save_json(manifest, {"endpoint": BASE + "/institutions", "params": query,
+                             "retrieved": date.today().isoformat()})
+    page = 1
+    while True:
+        target = folder / f"institutions-{page:04d}.json.gz"
+        if target.exists():
+            with gzip.open(target, "rt", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        else:
+            payload, url = api_get(session, "/institutions", query)
+            payload["_retrieval_url"] = url
+            with gzip.open(target, "wt", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False)
+            print(f"UK institutions page {page}", flush=True)
+        total = payload.get("meta", {}).get("count", 0)
+        if page * 200 >= total or not payload.get("results"):
+            break
+        page += 1
+        query["page"] = page
+        time.sleep(0.15)
+    print(f"UK institutions: {total} archived", flush=True)
+
+
+def fetch_uk_full_authorships():
+    """Preserve full work records where list results truncate at 100 bylines."""
+    session = requests.Session()
+    session.headers["User-Agent"] = "UKIrelandEconomistsGraph/0.1 (research metadata; polite sequential requests)"
+    count = 0
+    for page in sorted(UK_RAW.glob("[0-9][0-9][0-9][0-9]/works-*.json.gz")):
+        with gzip.open(page, "rt", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        for work in payload.get("results", []):
+            if len(work.get("authorships") or []) < 100:
+                continue
+            wid = short_id(work["id"])
+            target = page.parent / "full" / f"{wid}.json.gz"
+            if target.exists():
+                continue
+            full, url = api_get(session, f"/works/{wid}", {})
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with gzip.open(target, "wt", encoding="utf-8") as fh:
+                json.dump({"work": full, "_retrieval_url": url}, fh, ensure_ascii=False)
+            count += 1
+            time.sleep(0.15)
+    print(f"Archived {count} full UK work records", flush=True)
+
+
 def short_id(uri):
     return (uri or "").rsplit("/", 1)[-1]
 
 
 def write_csv(path, fields, rows):
+    def neo4j_csv_safe(row):
+        # OpenAlex occasionally supplies literal backslash-quote escapes or a
+        # trailing backslash. Neo4j's LOAD CSV treats those as quote escapes,
+        # whereas Python's CSV writer uses doubled quotes. Keep the untouched
+        # source response in raw/ and normalise only the import projection.
+        return {key: (value.replace('\\"', '"').replace("\\'", "'").rstrip('\\')
+                      if isinstance(value, str) else value)
+                for key, value in row.items()}
     with path.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)
         w.writeheader()
-        w.writerows(rows)
+        w.writerows(neo4j_csv_safe(row) for row in rows)
+
+
+def uk_institution_geography():
+    pages = sorted((UK_RAW / "institutions").glob("institutions-*.json.gz"))
+    if not pages:
+        raise RuntimeError("UK institution geography archive is missing")
+    metadata = {}
+    expected = None
+    for page in pages:
+        with gzip.open(page, "rt", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        expected = payload.get("meta", {}).get("count")
+        for inst in payload.get("results", []):
+            metadata[short_id(inst.get("id"))] = inst
+    if len(metadata) != expected:
+        raise RuntimeError(f"UK institution archive incomplete: {len(metadata)} of {expected}")
+    return metadata
 
 
 def person_name_key(name):
@@ -305,24 +438,35 @@ def resolve_person_identities(people, authorships, affiliations):
 
 def build():
     OUT.mkdir(parents=True, exist_ok=True)
-    target_ids = set(INSTITUTIONS)
+    uk_metadata = uk_institution_geography()
+    target_ids = set(INSTITUTIONS) | set(uk_metadata)
     people = {}
     institutions = {}
     papers = {}
     authorships = []
     paper_affiliations = []
-    coauthored = defaultdict(lambda: {"papers": set(), "years": set()})
-    shared = defaultdict(lambda: {"papers": set(), "years": set()})
-    raw_files = sorted(RAW.glob("works-*.json.gz")) + sorted(RAW.glob("extra-*.json.gz")) + sorted(BACKFILL.glob("works-*.json.gz")) + sorted(BACKFILL.glob("extra-*.json.gz"))
+    raw_files = (sorted(RAW.glob("works-*.json.gz")) + sorted(RAW.glob("extra-*.json.gz")) +
+                 sorted(BACKFILL.glob("works-*.json.gz")) + sorted(BACKFILL.glob("extra-*.json.gz")) +
+                 sorted(UK_RAW.glob("[0-9][0-9][0-9][0-9]/works-*.json.gz")))
     if not raw_files:
         raise RuntimeError("No downloaded OpenAlex work pages")
+    for year in range(2012, 2027):
+        pages = sorted((UK_RAW / str(year)).glob("works-*.json.gz"))
+        if not pages:
+            raise RuntimeError(f"UK {year} archive is missing")
+        if [p.name for p in pages] != [f"works-{i:04d}.json.gz" for i in range(1, len(pages) + 1)]:
+            raise RuntimeError(f"UK {year} archive has a missing page")
+        with gzip.open(pages[-1], "rt", encoding="utf-8") as fh:
+            last = json.load(fh)
+        if len(pages) * 200 < last.get("meta", {}).get("count", 0):
+            raise RuntimeError(f"UK {year} archive is incomplete")
     api_counts = {}
     seen_work = set()
-    affiliation_year_members = defaultdict(lambda: defaultdict(set))
     for raw_file in raw_files:
         with gzip.open(raw_file, "rt", encoding="utf-8") as fh:
             payload = json.load(fh)
-        prefix = ("backfill-" if raw_file.parent == BACKFILL else "") + raw_file.name.split("-", 1)[0]
+        prefix = ("uk-" + raw_file.parent.name + "-" if raw_file.parent.parent == UK_RAW else
+                  "backfill-" if raw_file.parent == BACKFILL else "") + raw_file.name.split("-", 1)[0]
         api_counts.setdefault(prefix, payload.get("meta", {}).get("count", 0))
         for work in payload["results"]:
             if work.get("is_retracted"):
@@ -340,7 +484,6 @@ def build():
             dt = work.get("publication_date") or ""
             if not (START <= dt <= END):
                 continue
-            year = dt[:4]
             paper_authors = []
             qualifying_authors = defaultdict(set)
             for pos, a in enumerate(work.get("authorships") or []):
@@ -361,16 +504,21 @@ def build():
                     iid = short_id(inst.get("id"))
                     if not iid:
                         continue
+                    geo = (uk_metadata.get(iid) or {}).get("geo") or {}
+                    country_code = inst.get("country_code") or geo.get("country_code") or ""
+                    country = (geo.get("region") or "United Kingdom (unclassified)") if country_code == "GB" else (
+                        "Ireland" if country_code == "IE" else "Other")
                     institutions[iid] = {"institution_id": iid,
                                          "name": inst.get("display_name") or INSTITUTIONS.get(iid, ""),
                                          "ror": inst.get("ror") or "",
-                                         "country_code": inst.get("country_code") or "",
-                                         "target": int(iid in target_ids)}
-                    if iid in target_ids:
+                                         "country_code": country_code,
+                                         "country": country,
+                                         "target": int(iid in target_ids or country_code == "GB")}
+                    if iid in target_ids or country_code == "GB":
+                        target_ids.add(iid)
                         matched.add(iid)
                         people[person_id]["qualifying"] = 1
                         qualifying_authors[iid].add(person_id)
-                        affiliation_year_members[(iid, year)][person_id].add(pid)
                     paper_affiliations.append({"person_id": person_id, "paper_id": pid,
                                                "institution_id": iid, "position": pos + 1,
                                                "publication_date": dt,
@@ -388,13 +536,6 @@ def build():
                            "doi": work.get("doi") or "", "openalex_id": work["id"],
                            "primary_field": ((work.get("primary_topic") or {}).get("field") or {}).get("display_name") or "",
                            "author_count": len(paper_authors)}
-            for pair in combinations(sorted(set(paper_authors)), 2):
-                coauthored[pair]["papers"].add(pid)
-                coauthored[pair]["years"].add(year)
-            for iid, members in qualifying_authors.items():
-                for pair in combinations(sorted(members), 2):
-                    shared[(pair[0], pair[1], iid)]["papers"].add(pid)
-                    shared[(pair[0], pair[1], iid)]["years"].add(year)
 
     valid_papers = set(papers)
     authorships = [r for r in authorships if r["paper_id"] in valid_papers]
@@ -415,24 +556,10 @@ def build():
     co_rows = [{"person_a": a, "person_b": b, "paper_count": len(v["papers"]),
                 "paper_ids": "|".join(sorted(v["papers"])), "years": "|".join(sorted(v["years"]))}
                for (a, b), v in sorted(coauthored.items())]
-    # Same year is a co-observed publication affiliation, NOT proof of
-    # overlapping employment dates. Retain each author's supporting papers.
-    affiliation_pairs = defaultdict(lambda: {"years": set(), "papers_a": set(), "papers_b": set()})
-    affiliation_year_members = defaultdict(lambda: defaultdict(set))
-    for row in paper_affiliations:
-        if row['institution_id'] in target_ids:
-            affiliation_year_members[(row['institution_id'], row['publication_date'][:4])][row['person_id']].add(row['paper_id'])
-    for (iid, year), members in affiliation_year_members.items():
-        for a, b in combinations(sorted(members), 2):
-            row = affiliation_pairs[(a, b, iid)]
-            row["years"].add(year)
-            row["papers_a"].update(members[a])
-            row["papers_b"].update(members[b])
-    shared_rows = [{"person_a": a, "person_b": b, "institution_id": iid,
-                    "years": "|".join(sorted(v["years"])),
-                    "paper_ids_a": "|".join(sorted(v["papers_a"])),
-                    "paper_ids_b": "|".join(sorted(v["papers_b"]))}
-                   for (a, b, iid), v in sorted(affiliation_pairs.items())]
+    # A UK-wide institution-year clique can contain millions of derived pairs.
+    # Preserve the publication-affiliation edges; compute this optional view
+    # for a selected person on demand instead of materialising a misleading clique.
+    shared_rows = []
     write_csv(OUT / "people.csv", list(next(iter(people.values()))), people.values())
     write_csv(OUT / "institutions.csv", list(next(iter(institutions.values()))), institutions.values())
     write_csv(OUT / "papers.csv", list(next(iter(papers.values()))), papers.values())
@@ -448,25 +575,34 @@ def build():
     for kid, scope, name, typ in [
         ("label", "node", "label", "string"),
         ("kind", "node", "kind", "string"),
+        ("country", "node", "country", "string"),
+        ("countries", "node", "countries", "string"),
         ("relation", "edge", "relation", "string"),
         ("weight", "edge", "weight", "int"),
         ("paper_ids", "edge", "paper_ids", "string"),
     ]:
         ET.SubElement(root, f"{{{ns}}}key", id=kid, **{"for": scope, "attr.name": name, "attr.type": typ})
-    graph = ET.SubElement(root, f"{{{ns}}}graph", id="irish-economists", edgedefault="undirected")
+    graph = ET.SubElement(root, f"{{{ns}}}graph", id="uk-ireland-economists", edgedefault="undirected")
 
     def item(parent, key, value):
         ET.SubElement(parent, f"{{{ns}}}data", key=key).text = str(value)
 
     qpeople = {pid for pid, person in people.items() if person["qualifying"]}
+    person_countries = defaultdict(set)
+    for affiliation in paper_affiliations:
+        iid = affiliation["institution_id"]
+        if iid in target_ids and iid in institutions:
+            person_countries[affiliation["person_id"]].add(institutions[iid]["country"])
     for pid in sorted(qpeople):
         n = ET.SubElement(graph, f"{{{ns}}}node", id="person:" + pid)
         item(n, "label", people[pid]["name"])
         item(n, "kind", "person")
+        item(n, "countries", "|".join(sorted(person_countries[pid])))
     for iid in sorted(target_ids & set(institutions)):
         n = ET.SubElement(graph, f"{{{ns}}}node", id="institution:" + iid)
         item(n, "label", institutions[iid]["name"])
         item(n, "kind", "institution")
+        item(n, "country", institutions[iid]["country"])
     for row in co_rows:
         if row["person_a"] not in qpeople or row["person_b"] not in qpeople:
             continue
@@ -487,20 +623,26 @@ def build():
         item(e, "paper_ids", "|".join(sorted(paper_ids)))
     ET.ElementTree(root).write(OUT / "irish-economists.graphml", encoding="utf-8", xml_declaration=True)
     hashes = {str(p.relative_to(RAW)): hashlib.sha256(p.read_bytes()).hexdigest() for p in raw_files}
+    hashes.update({str(p.relative_to(RAW)): hashlib.sha256(p.read_bytes()).hexdigest()
+                   for p in sorted((UK_RAW / "institutions").glob("institutions-*.json.gz"))})
     hashes.update({"full/" + p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                    for p in sorted((RAW / "full").glob("*.json.gz"))})
     hashes.update({"backfill-2012/full/" + p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                    for p in sorted((BACKFILL / "full").glob("*.json.gz"))})
+    hashes.update({str(p.relative_to(RAW)): hashlib.sha256(p.read_bytes()).hexdigest()
+                   for p in sorted(UK_RAW.glob("[0-9][0-9][0-9][0-9]/full/*.json.gz"))})
     summary = {"period_start": START, "period_end": END, "source": "OpenAlex API",
                "inclusion": "primary topic field 20: Economics, Econometrics and Finance; article/preprint/report; target institution in individual authorship",
-               "source_query": [json.loads(p.read_text()) for p in sorted(RAW.glob("query-*.json")) + sorted(BACKFILL.glob("query-*.json"))],
+               "source_query": [json.loads(p.read_text()) for p in (sorted(RAW.glob("query-*.json")) +
+                                sorted(BACKFILL.glob("query-*.json")) + sorted(UK_RAW.glob("*/query.json")))],
                "api_query_counts": api_counts, "raw_pages": len(raw_files),
                "raw_sha256": hashes, "papers": len(papers), "people": len(people),
                "identity_aliases": merged_id_count,
                "qualifying_people": sum(v["qualifying"] for v in people.values()),
                "institutions": len(institutions), "authorships": len(authorships),
                "paper_affiliations": len(paper_affiliations), "coauthor_pairs": len(co_rows),
-               "same_year_same_institution_pairs": len(shared_rows)}
+               "same_year_same_institution_pairs": len(shared_rows),
+               "shared_institution_year_mode": "derived_on_demand"}
     summary["graphml_qualified_coauthor_pairs"] = sum(
         x["person_a"] in qpeople and x["person_b"] in qpeople for x in co_rows)
     summary["graphml_affiliation_pairs"] = len(affiliations_by_person)
@@ -513,9 +655,15 @@ def build():
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("stage", choices=["fetch", "fetch_extra", "fetch_backfill", "fetch_backfill_extra", "build"])
+    p.add_argument("stage", choices=["fetch", "fetch_extra", "fetch_backfill", "fetch_backfill_extra", "fetch_uk", "fetch_uk_institutions", "fetch_uk_full", "build"])
     args = p.parse_args()
-    if args.stage.startswith("fetch"):
+    if args.stage == "fetch_uk":
+        fetch_uk()
+    elif args.stage == "fetch_uk_institutions":
+        fetch_uk_institutions()
+    elif args.stage == "fetch_uk_full":
+        fetch_uk_full_authorships()
+    elif args.stage.startswith("fetch"):
         fetch(extra="extra" in args.stage, backfill="backfill" in args.stage)
     else:
         build()

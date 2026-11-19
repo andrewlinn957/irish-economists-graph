@@ -23,6 +23,8 @@ main.inspector-minimised{grid-template-columns:minmax(0,1fr)}
 .control-section label{display:flex;align-items:center;gap:9px;min-height:38px;font-size:13px;color:#304936;cursor:pointer}
 .control-section input[type=checkbox]{width:17px;height:17px;flex:none;accent-color:#397b58}
 #cluster-lens{width:100%;min-height:42px;padding:7px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e}
+#country-filter,#institution-filter,#institution-search{width:100%;min-height:42px;padding:7px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e}
+#institution-search{margin:0 0 7px}
 #cluster-count{width:100%;accent-color:#397b58;cursor:pointer}#cluster-count-value{margin-left:auto;font-weight:700;color:#28583c}.control-hint{margin:3px 0 0;font-size:11px;color:#6e8173}
 #legend{position:static;max-width:none;max-height:none;overflow:visible;background:transparent;border:0;border-radius:0;box-shadow:none;padding:12px 0}
 #legend-list{max-height:230px;overflow:auto}

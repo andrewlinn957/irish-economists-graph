@@ -9,3 +9,11 @@ __pycache__/
 # Preserved local-only prior export and exploratory RePEc mirror
 output-2016-2026/
 raw/repec/
+
+# Rebuildable CSV/GraphML exports are larger than GitHub's per-file limit.
+# The preserved OpenAlex responses and published Pages snapshot are tracked.
+output/
+output-uk-candidate/
+output-irish-backup-*/
+docs-uk-candidate/
+docs-irish-backup-*/

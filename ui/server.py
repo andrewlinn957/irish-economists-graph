@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only, Tailscale-bound Irish economists graph viewer."""
+"""Read-only, Tailscale-bound UK and Ireland economists graph viewer."""
 import base64
 import csv
 import json
@@ -14,11 +14,12 @@ from urllib.request import Request, urlopen
 HERE = Path(__file__).resolve().parent
 AUTH_FILE = Path('/root/.config/china-pra-neo4j/auth.env')
 NEO4J = 'http://100.116.32.107:7474/db/neo4j/query/v2'
-HOST = os.environ.get('IRISH_GRAPH_HOST', '100.116.32.107')
-PORT = int(os.environ.get('IRISH_GRAPH_PORT', '8127'))
-OVERVIEW_FILE = HERE.parent / 'output' / 'irish-economists.graphml'
-OUTPUT = HERE.parent / 'output'
+HOST = os.environ.get('UKIE_GRAPH_HOST', '100.116.32.107')
+PORT = int(os.environ.get('UKIE_GRAPH_PORT', '8127'))
+OUTPUT = Path(os.environ.get('ECON_GRAPH_OUTPUT', HERE.parent / 'output'))
+OVERVIEW_FILE = OUTPUT / 'irish-economists.graphml'
 _overview = None
+_country_overviews = {}
 _matchmaker_data = None
 
 
@@ -101,7 +102,8 @@ def overview():
     for node in root.findall('.//g:node', ns):
         values = {d.attrib['key']: d.text or '' for d in node.findall('g:data', ns)}
         nodes.append({'id': node.attrib['id'].split(':', 1)[1], 'label': values.get('label', ''),
-                      'kind': values.get('kind', 'person')})
+                      'kind': values.get('kind', 'person'), 'country': values.get('country', ''),
+                      'countries': values.get('countries', '').split('|') if values.get('countries') else []})
     for edge in root.findall('.//g:edge', ns):
         values = {d.attrib['key']: d.text or '' for d in edge.findall('g:data', ns)}
         links.append({'source': edge.attrib['source'].split(':', 1)[1],
@@ -134,6 +136,33 @@ def overview():
     add_clusters(nodes, links)
     _overview = {'nodes': nodes, 'links': links}
     return _overview
+
+
+def country_overview(country='island'):
+    if country in _country_overviews:
+        return _country_overviews[country]
+    graph = overview()
+    if country == 'all':
+        return graph
+    choices = {
+        'island': {'Ireland', 'Northern Ireland'},
+        'uk': {'England', 'Scotland', 'Wales', 'Northern Ireland', 'United Kingdom (unclassified)'},
+    }
+    allowed = choices.get(country, {country})
+    institutions = {n['id'] for n in graph['nodes'] if n['kind'] == 'institution' and n.get('country') in allowed}
+    people = {n['id'] for n in graph['nodes'] if n['kind'] == 'person' and set(n.get('countries', [])) & allowed}
+    topics = set()
+    for edge in graph['links']:
+        if edge['type'] == 'topic':
+            if edge['source'] in people:
+                topics.add(edge['target'])
+            if edge['target'] in people:
+                topics.add(edge['source'])
+    ids = people | institutions | topics
+    result = {'nodes': [n for n in graph['nodes'] if n['id'] in ids],
+              'links': [e for e in graph['links'] if e['source'] in ids and e['target'] in ids]}
+    _country_overviews[country] = result
+    return result
 
 
 def topic_overview():
@@ -251,66 +280,69 @@ def search(term, kind):
     term = term.strip()[:100].lower()
     if len(term) < 2:
         return []
-    label = {'institution': 'IrishInstitution', 'topic': 'IrishTopic'}.get(kind, 'IrishPerson')
+    label = {'institution': 'UKIEInstitution', 'topic': 'UKIETopic'}.get(kind, 'UKIEPerson')
+    qualifier = 'n.target' if kind == 'institution' else ('null' if kind == 'topic' else 'n.qualifying')
     condition = 'true'
     return query(f'''MATCH (n:{label}) WHERE {condition} AND toLower(n.name) CONTAINS $q
-                   RETURN n.id AS id, n.name AS name, n.qualifying AS qualifying
+                   RETURN n.id AS id, n.name AS name, {qualifier} AS qualifying
                    ORDER BY CASE WHEN toLower(n.name) STARTS WITH $q THEN 0 ELSE 1 END, n.name LIMIT 30''', {'q': term})
 
 
 def person(person_id, include_shared=False):
-    centre = query('MATCH (p:IrishPerson {id:$id}) RETURN p.id AS id,p.name AS name,p.orcid AS orcid,p.qualifying AS qualifying', {'id': person_id})
+    centre = query('MATCH (p:UKIEPerson {id:$id}) RETURN p.id AS id,p.name AS name,p.orcid AS orcid,p.qualifying AS qualifying', {'id': person_id})
     if not centre:
         return None
-    collaborators = query('''MATCH (p:IrishPerson {id:$id})-[r:IRISH_COAUTHORED]-(n:IrishPerson)
+    collaborators = query('''MATCH (p:UKIEPerson {id:$id})-[r:UKIE_COAUTHORED]-(n:UKIEPerson)
         RETURN n.id AS id,n.name AS name,n.qualifying AS qualifying,r.paper_count AS weight,
                r.paper_ids AS paper_ids,r.years AS years ORDER BY weight DESC,n.name LIMIT 65''', {'id': person_id})
-    affiliations = query('''MATCH (p:IrishPerson {id:$id})-[r:IRISH_AFFILIATED_ON_PAPER]->(i:IrishInstitution)
+    affiliations = query('''MATCH (p:UKIEPerson {id:$id})-[r:UKIE_AFFILIATED_ON_PAPER]->(i:UKIEInstitution)
         RETURN i.id AS id,i.name AS name,i.target AS target, count(DISTINCT r.paper_id) AS weight,
                collect(DISTINCT r.paper_id)[0..25] AS paper_ids, collect(DISTINCT toString(r.publication_date))[0..25] AS dates,
                collect(DISTINCT r.raw_affiliation)[0..10] AS raw_affiliations
         ORDER BY weight DESC LIMIT 35''', {'id': person_id})
-    topics = query('''MATCH (p:IrishPerson {id:$id})-[:IRISH_AUTHORED]->(w:IrishPaper)-[:IRISH_HAS_TOPIC]->(t:IrishTopic)
+    topics = query('''MATCH (p:UKIEPerson {id:$id})-[:UKIE_AUTHORED]->(w:UKIEPaper)-[:UKIE_HAS_TOPIC]->(t:UKIETopic)
         RETURN t.id AS id,t.name AS name,count(DISTINCT w.id) AS weight,
                collect(DISTINCT w.id)[0..25] AS paper_ids
         ORDER BY weight DESC,t.name LIMIT 20''', {'id': person_id})
-    papers = query('''MATCH (p:IrishPerson {id:$id})-[:IRISH_AUTHORED]->(w:IrishPaper)
+    papers = query('''MATCH (p:UKIEPerson {id:$id})-[:UKIE_AUTHORED]->(w:UKIEPaper)
         RETURN DISTINCT w.id AS id,w.title AS title,toString(w.publication_date) AS date,
                w.doi AS doi,w.openalex_id AS openalex ORDER BY date DESC LIMIT 35''', {'id': person_id})
-    shared = query('''MATCH (p:IrishPerson {id:$id})-[r:IRISH_SHARED_INSTITUTION_YEAR]-(n:IrishPerson)
-        MATCH (i:IrishInstitution {id:r.institution_id}) WHERE i.target = true
-        RETURN n.id AS id,n.name AS name,i.name AS institution,r.years AS years,
-               r.paper_ids_a AS paper_ids_a,r.paper_ids_b AS paper_ids_b
-        ORDER BY size(r.years) DESC,n.name LIMIT 55''', {'id': person_id}) if include_shared else []
+    shared = query('''MATCH (p:UKIEPerson {id:$id})-[a:UKIE_AFFILIATED_ON_PAPER]->(i:UKIEInstitution)<-[b:UKIE_AFFILIATED_ON_PAPER]-(n:UKIEPerson)
+        WHERE i.target = true AND n <> p AND a.publication_date.year = b.publication_date.year
+        WITH n,i,collect(DISTINCT toString(a.publication_date.year)) AS years,
+             collect(DISTINCT a.paper_id) AS papers_a,collect(DISTINCT b.paper_id) AS papers_b
+        RETURN n.id AS id,n.name AS name,i.name AS institution,years,
+               papers_a[0..25] AS paper_ids_a,papers_b[0..25] AS paper_ids_b
+        ORDER BY size(years) DESC,n.name LIMIT 55''', {'id': person_id}) if include_shared else []
     return {'centre': centre[0], 'collaborators': collaborators, 'affiliations': affiliations,
             'topics': topics, 'papers': papers, 'shared': shared}
 
 
 def institution(institution_id):
-    centre = query('MATCH (i:IrishInstitution {id:$id}) RETURN i.id AS id,i.name AS name,i.ror AS ror,i.target AS target', {'id': institution_id})
+    centre = query('MATCH (i:UKIEInstitution {id:$id}) RETURN i.id AS id,i.name AS name,i.ror AS ror,i.country AS country,i.target AS target', {'id': institution_id})
     if not centre:
         return None
-    people = query('''MATCH (p:IrishPerson)-[r:IRISH_AFFILIATED_ON_PAPER]->(i:IrishInstitution {id:$id})
+    people = query('''MATCH (p:UKIEPerson)-[r:UKIE_AFFILIATED_ON_PAPER]->(i:UKIEInstitution {id:$id})
         RETURN p.id AS id,p.name AS name,count(DISTINCT r.paper_id) AS weight,
                collect(DISTINCT r.paper_id)[0..25] AS paper_ids,
                collect(DISTINCT toString(r.publication_date))[0..25] AS dates,
                collect(DISTINCT r.raw_affiliation)[0..10] AS raw_affiliations
         ORDER BY weight DESC,p.name LIMIT 75''', {'id': institution_id})
-    papers = query('''MATCH (p:IrishPerson)-[r:IRISH_AFFILIATED_ON_PAPER]->(i:IrishInstitution {id:$id})
-        MATCH (w:IrishPaper {id:r.paper_id})
+    papers = query('''MATCH (p:UKIEPerson)-[r:UKIE_AFFILIATED_ON_PAPER]->(i:UKIEInstitution {id:$id})
+        MATCH (w:UKIEPaper {id:r.paper_id})
         RETURN DISTINCT w.id AS id,w.title AS title,toString(w.publication_date) AS date,
                w.doi AS doi,w.openalex_id AS openalex ORDER BY date DESC LIMIT 35''', {'id': institution_id})
     return {'centre': centre[0], 'people': people, 'papers': papers}
 
 
 def topic(topic_id):
-    centre = query('MATCH (t:IrishTopic {id:$id}) RETURN t.id AS id,t.name AS name,t.field AS field,t.subfield AS subfield,t.openalex_id AS openalex', {'id': topic_id})
+    centre = query('MATCH (t:UKIETopic {id:$id}) RETURN t.id AS id,t.name AS name,t.field AS field,t.subfield AS subfield,t.openalex_id AS openalex', {'id': topic_id})
     if not centre:
         return None
-    related = query('''MATCH (t:IrishTopic {id:$id})-[r:IRISH_TOPIC_COOCCURS]-(n:IrishTopic)
+    related = query('''MATCH (t:UKIETopic {id:$id})-[r:UKIE_TOPIC_COOCCURS]-(n:UKIETopic)
         RETURN n.id AS id,n.name AS name,n.field AS field,r.paper_count AS weight,r.paper_ids AS paper_ids
         ORDER BY weight DESC,n.name LIMIT 60''', {'id': topic_id})
-    papers = query('''MATCH (w:IrishPaper)-[r:IRISH_HAS_TOPIC]->(t:IrishTopic {id:$id})
+    papers = query('''MATCH (w:UKIEPaper)-[r:UKIE_HAS_TOPIC]->(t:UKIETopic {id:$id})
         RETURN w.id AS id,w.title AS title,toString(w.publication_date) AS date,
                w.doi AS doi,w.openalex_id AS openalex,r.score AS score,r.primary AS primary
         ORDER BY score DESC,date DESC LIMIT 40''', {'id': topic_id})
@@ -318,14 +350,14 @@ def topic(topic_id):
 
 
 def paper(paper_id):
-    rows = query('''MATCH (w:IrishPaper {id:$id})
-        OPTIONAL MATCH (p:IrishPerson)-[a:IRISH_AUTHORED]->(w)
+    rows = query('''MATCH (w:UKIEPaper {id:$id})
+        OPTIONAL MATCH (p:UKIEPerson)-[a:UKIE_AUTHORED]->(w)
         RETURN w.id AS id,w.title AS title,toString(w.publication_date) AS date,w.doi AS doi,
                w.openalex_id AS openalex,p.id AS person_id,p.name AS person_name,a.position AS position
         ORDER BY position LIMIT 300''', {'id': paper_id})
     if not rows:
         return None
-    topics = query('''MATCH (w:IrishPaper {id:$id})-[r:IRISH_HAS_TOPIC]->(t:IrishTopic)
+    topics = query('''MATCH (w:UKIEPaper {id:$id})-[r:UKIE_HAS_TOPIC]->(t:UKIETopic)
         RETURN t.id AS id,t.name AS name,r.score AS score,r.primary AS primary
         ORDER BY score DESC''', {'id': paper_id})
     return {'authors': rows, 'topics': topics}
@@ -342,7 +374,7 @@ class Handler(BaseHTTPRequestHandler):
                 if parts[1] == 'search':
                     body = search(params.get('q', [''])[0], params.get('kind', ['person'])[0])
                 elif parts[1] == 'overview' and len(parts) == 2:
-                    body = overview()
+                    body = country_overview(params.get('country', ['island'])[0])
                 elif parts[1] == 'topic-overview' and len(parts) == 2:
                     body = topic_overview()
                 elif parts[1] == 'matchmaker' and len(parts) == 3 and parts[2] == 'search':
