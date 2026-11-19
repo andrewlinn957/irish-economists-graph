@@ -71,7 +71,7 @@ function drawClusterLabels(ctx, scale) {
   ctx.save();
   const placed = [];
   const ordered = [...clusterFrameLabels].sort((a,b) => (a.id===activeCluster ? -1 : 0) - (b.id===activeCluster ? -1 : 0) || b.count-a.count);
-  const limit = scale < 1.2 ? Number($('#cluster-count').value) : scale < 2.5 ? 30 : 40;
+  const limit = scale < 1.2 ? Math.min(30, Number($('#cluster-count').value)) : scale < 2.5 ? 40 : 80;
   let shown = 0;
   for (const {id,x,y,radius,label,colour} of ordered) {
     if (shown >= limit && id !== activeCluster) continue;
@@ -126,7 +126,7 @@ function updateLegend() {
   const rows=[...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   const lens=$('#cluster-lens').selectedOptions[0].text;
   $('#cluster-heading').textContent=`${lens} · ${counts.size} clusters`;
-  const limit = overviewMode ? Math.max(12, Number($('#cluster-count').value)) : 12;
+  const limit = overviewMode ? Math.min(40, Math.max(12, Number($('#cluster-count').value))) : 12;
   $('#legend-list').innerHTML=rows.slice(0,limit).map(([name,count])=>{
     const n=currentNodes.find(n=>nodeVisible(n)&&clusterOf(n)===name);
     return `<button data-cluster="${safe(name)}" class="${name===activeCluster?'active':''}"><span class="swatch" style="background:${clusterColour(n)}"></span><span>${safe(clusterLabel(n))}</span><span class="legend-count">${count}</span></button>`;
@@ -167,7 +167,7 @@ function applyClusterLayout(reheat = true) {
     const centres = new Map();
     groups.forEach(([id], i) => {
       const angle = i * 2.399963229728653;
-      const radius = i < 8 ? 600 : 1350 + 300 * Math.sqrt((i - 8) / Math.max(1, groups.length - 8));
+      const radius = i < 8 ? 600 : 1350 + 180 * Math.sqrt(i - 8);
       centres.set(id, {x:radius * Math.cos(angle), y:radius * Math.sin(angle)});
     });
     centres.set('unconnected', {x:1850, y:0});
@@ -291,7 +291,7 @@ function renderOverviewSlice() {
   }
   const ranked = [...sizes].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]));
   const slider = $('#cluster-count');
-  slider.max = String(Math.max(1, Math.min(30, ranked.length)));
+  slider.max = String(Math.max(1, ranked.length));
   slider.value = String(Math.min(Number(slider.value), Number(slider.max)));
   const count = Number(slider.value);
   $('#cluster-count-value').textContent = `${count} of ${ranked.length}`;
