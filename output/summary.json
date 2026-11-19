@@ -119,14 +119,15 @@
     "full/W7201869244.json.gz": "c295f3ab9345b91a2d9f70975d350c5f0a70b05083edd85b2589c9e992e6b343",
     "full/W7212378928.json.gz": "65e3c337d88293ababa866e5a01b4da83a376277e1d05e3f78bc49cf95937bf2"
   },
-  "papers": 6078,
-  "people": 11198,
-  "qualifying_people": 3500,
+  "papers": 6077,
+  "people": 10749,
+  "identity_aliases": 343,
+  "qualifying_people": 3223,
   "institutions": 2670,
-  "authorships": 21949,
-  "paper_affiliations": 27282,
-  "coauthor_pairs": 122033,
-  "same_year_same_institution_pairs": 155880,
-  "graphml_qualified_coauthor_pairs": 5432,
-  "graphml_affiliation_pairs": 3911
+  "authorships": 21836,
+  "paper_affiliations": 27234,
+  "coauthor_pairs": 120366,
+  "same_year_same_institution_pairs": 142703,
+  "graphml_qualified_coauthor_pairs": 5046,
+  "graphml_affiliation_pairs": 3619
 }

@@ -8,7 +8,9 @@ import csv
 import gzip
 import hashlib
 import json
+import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import date
@@ -130,6 +132,177 @@ def write_csv(path, fields, rows):
         w.writerows(rows)
 
 
+def person_name_key(name):
+    """Comparable first/last name, never by itself sufficient for a merge."""
+    plain = ''.join(c for c in unicodedata.normalize('NFKD', name.casefold())
+                    if not unicodedata.combining(c))
+    words = re.findall(r"[a-z]+", plain)
+    if len(words) < 2:
+        return None
+    return words[0], words[-1]
+
+
+def middle_names_compatible(a, b):
+    def middle(name):
+        plain = ''.join(c for c in unicodedata.normalize('NFKD', name.casefold())
+                        if not unicodedata.combining(c))
+        return re.findall(r'[a-z]+', plain)[1:-1]
+    left, right = middle(a), middle(b)
+    return not left or not right or (len(left) == len(right) and
+                                     all(x[0] == y[0] for x, y in zip(left, right)))
+
+
+def resolve_person_identities(people, authorships, affiliations):
+    """Merge only evidenced duplicate IDs; retain an alias receipt for audit."""
+    by_paper = defaultdict(list)
+    papers_by_person = defaultdict(set)
+    institutions_by_person = defaultdict(set)
+    email_by_person = defaultdict(set)
+    for row in authorships:
+        by_paper[row['paper_id']].append(row['person_id'])
+        papers_by_person[row['person_id']].add(row['paper_id'])
+    for row in affiliations:
+        pid = row['person_id']
+        institutions_by_person[pid].add(row['institution_id'])
+        for address in re.findall(r'[\w.+-]+@[\w.-]+\.[a-z]{2,}', row['raw_affiliation'].casefold()):
+            if any(part in address.split('@')[0] for part in person_name_key(people[pid]['name']) or ()):
+                email_by_person[pid].add(address)
+    coauthors_by_person = defaultdict(set)
+    for members in by_paper.values():
+        for pid in members:
+            coauthors_by_person[pid].update(
+                person_name_key(people[other]['name']) for other in members
+                if other != pid and person_name_key(people[other]['name']))
+
+    parent = {pid: pid for pid in people}
+    component_papers = {pid: set(papers_by_person[pid]) for pid in people}
+    component_orcids = {pid: ({people[pid]['orcid']} if people[pid]['orcid'] else set()) for pid in people}
+    reasons = {}
+
+    def root(pid):
+        while parent[pid] != pid:
+            parent[pid] = parent[parent[pid]]
+            pid = parent[pid]
+        return pid
+
+    def merge(a, b, reason):
+        a, b = root(a), root(b)
+        if (a == b or component_papers[a] & component_papers[b] or
+                len(component_orcids[a] | component_orcids[b]) > 1):
+            return
+        if b < a:
+            a, b = b, a
+        parent[b] = a
+        component_papers[a].update(component_papers[b])
+        component_orcids[a].update(component_orcids[b])
+        reasons[b] = reason
+
+    groups = defaultdict(list)
+    for pid, person in people.items():
+        key = person_name_key(person['name'])
+        if key:
+            groups[key].append(pid)
+    for ids in groups.values():
+        for a, b in combinations(sorted(ids), 2):
+            if not middle_names_compatible(people[a]['name'], people[b]['name']):
+                continue
+            if people[a]['orcid'] and people[b]['orcid'] and people[a]['orcid'] != people[b]['orcid']:
+                continue
+            if not (a.startswith('unresolved:') or b.startswith('unresolved:')):
+                # Preserve distinct OpenAlex identities unless a stable identifier agrees.
+                if not (people[a]['orcid'] and people[a]['orcid'] == people[b]['orcid']):
+                    continue
+            shared_orcid = people[a]['orcid'] and people[a]['orcid'] == people[b]['orcid']
+            shared_email = email_by_person[a] & email_by_person[b]
+            shared_coauthor = coauthors_by_person[a] & coauthors_by_person[b]
+            shared_institution = institutions_by_person[a] & institutions_by_person[b]
+            if shared_orcid:
+                merge(a, b, 'same byline ORCID')
+            elif shared_email:
+                merge(a, b, 'same byline email')
+            elif shared_institution and shared_coauthor:
+                merge(a, b, 'same first/last name, publication institution and co-author name')
+
+    for ids in groups.values():
+        resolved_roots = {root(pid) for pid in ids if people[pid]['openalex_id']}
+        if len(resolved_roots) != 1:
+            continue
+        anchor_root = next(iter(resolved_roots))
+        if not component_orcids[anchor_root]:
+            continue
+        anchor = next(pid for pid in ids if root(pid) == anchor_root and people[pid]['orcid'])
+        for pid in ids:
+            if pid == anchor or not pid.startswith('unresolved:'):
+                continue
+            if (middle_names_compatible(people[anchor]['name'], people[pid]['name']) and
+                    institutions_by_person[anchor] & institutions_by_person[pid] and
+                    (not people[pid]['orcid'] or people[pid]['orcid'] == people[anchor]['orcid'])):
+                merge(anchor, pid, 'unique ORCID-bearing OpenAlex identity with matching name and publication institution')
+
+    override_groups = json.loads((ROOT / 'identity-overrides.json').read_text())['groups']
+    explicit = {}
+    for group in override_groups:
+        present = [pid for pid in group['source_ids'] if pid in people]
+        if not present:
+            continue
+        if len({person_name_key(people[pid]['name']) for pid in present}) != 1:
+            raise ValueError(f"Override has incompatible names: {group['canonical_id']}")
+        if len(set(present)) != len(present):
+            raise ValueError(f"Override repeats a source ID: {group['canonical_id']}")
+        paper_sets = [papers_by_person[pid] for pid in present]
+        if any(x & y for x, y in combinations(paper_sets, 2)):
+            raise ValueError(f"Override contains same-paper bylines: {group['canonical_id']}")
+        for pid in present:
+            if pid in explicit:
+                raise ValueError(f"Overlapping identity overrides: {pid}")
+            explicit[pid] = group
+        for pid in present[1:]:
+            merge(present[0], pid, 'reviewed identity override')
+        if len({root(pid) for pid in present}) != 1:
+            raise ValueError(f"Override could not merge all source IDs: {group['canonical_id']}")
+
+    components = defaultdict(list)
+    for pid in people:
+        components[root(pid)].append(pid)
+    mapping, audit = {}, []
+    for ids in components.values():
+        orcids = {people[pid]['orcid'] for pid in ids if people[pid]['orcid']}
+        if len(orcids) > 1:
+            raise ValueError(f"Identity component joins conflicting ORCIDs: {ids}")
+        overrides = {explicit[pid]['canonical_id'] for pid in ids if pid in explicit}
+        if len(overrides) > 1:
+            raise ValueError(f"Identity component joins conflicting overrides: {sorted(overrides)}")
+        canonical = next(iter(overrides)) if overrides else min(ids, key=lambda pid: (pid.startswith('unresolved:'), pid))
+        for pid in ids:
+            mapping[pid] = canonical
+            if pid != canonical:
+                audit.append({'source_person_id': pid, 'canonical_person_id': canonical,
+                              'name': people[pid]['name'],
+                              'reason': explicit[pid]['reason'] if pid in explicit else reasons.get(pid, 'evidence-linked component')})
+    resolved_people = {}
+    for pid, person in people.items():
+        canonical = mapping[pid]
+        if canonical not in resolved_people:
+            resolved_people[canonical] = {**person, 'person_id': canonical}
+        other = resolved_people[canonical]
+        other['qualifying'] = int(bool(other['qualifying']) or bool(person['qualifying']))
+        if not other['openalex_id'] and person['openalex_id']:
+            other['openalex_id'] = person['openalex_id']
+        if not other['orcid'] and person['orcid']:
+            other['orcid'] = person['orcid']
+    for group in override_groups:
+        if group['canonical_id'] in resolved_people:
+            resolved_people[group['canonical_id']]['name'] = group['preferred_name']
+    for row in authorships:
+        row['person_id'] = mapping[row['person_id']]
+    for row in affiliations:
+        row['person_id'] = mapping[row['person_id']]
+    write_csv(OUT / 'identity-resolution.csv',
+              ['source_person_id', 'canonical_person_id', 'name', 'reason'],
+              sorted(audit, key=lambda row: row['source_person_id']))
+    return resolved_people, mapping, len(audit)
+
+
 def build():
     OUT.mkdir(parents=True, exist_ok=True)
     target_ids = set(INSTITUTIONS)
@@ -172,8 +345,12 @@ def build():
             qualifying_authors = defaultdict(set)
             for pos, a in enumerate(work.get("authorships") or []):
                 author = a.get("author") or {}
-                person_id = short_id(author.get("id")) or f"unresolved:{pid}:{pos}"
                 name = a.get("raw_author_name") or author.get("display_name") or "Unknown"
+                # OpenAlex occasionally encodes the institute acronym as a
+                # person byline (sometimes repeatedly on one work).
+                if name.strip().casefold() in {'esri', 'economic and social research institute'}:
+                    continue
+                person_id = short_id(author.get("id")) or f"unresolved:{pid}:{pos}"
                 if person_id not in people:
                     people[person_id] = {"person_id": person_id, "name": name,
                                          "openalex_id": author.get("id") or "",
@@ -226,12 +403,25 @@ def build():
     valid_institutions = {r["institution_id"] for r in paper_affiliations}
     people = {k: v for k, v in people.items() if k in valid_people}
     institutions = {k: v for k, v in institutions.items() if k in valid_institutions}
+    people, _, merged_id_count = resolve_person_identities(people, authorships, paper_affiliations)
+    coauthored = defaultdict(lambda: {"papers": set(), "years": set()})
+    authors_by_paper = defaultdict(set)
+    for row in authorships:
+        authors_by_paper[row['paper_id']].add(row['person_id'])
+    for pid, members in authors_by_paper.items():
+        for pair in combinations(sorted(members), 2):
+            coauthored[pair]['papers'].add(pid)
+            coauthored[pair]['years'].add(papers[pid]['publication_date'][:4])
     co_rows = [{"person_a": a, "person_b": b, "paper_count": len(v["papers"]),
                 "paper_ids": "|".join(sorted(v["papers"])), "years": "|".join(sorted(v["years"]))}
                for (a, b), v in sorted(coauthored.items())]
     # Same year is a co-observed publication affiliation, NOT proof of
     # overlapping employment dates. Retain each author's supporting papers.
     affiliation_pairs = defaultdict(lambda: {"years": set(), "papers_a": set(), "papers_b": set()})
+    affiliation_year_members = defaultdict(lambda: defaultdict(set))
+    for row in paper_affiliations:
+        if row['institution_id'] in target_ids:
+            affiliation_year_members[(row['institution_id'], row['publication_date'][:4])][row['person_id']].add(row['paper_id'])
     for (iid, year), members in affiliation_year_members.items():
         for a, b in combinations(sorted(members), 2):
             row = affiliation_pairs[(a, b, iid)]
@@ -306,6 +496,7 @@ def build():
                "source_query": [json.loads(p.read_text()) for p in sorted(RAW.glob("query-*.json")) + sorted(BACKFILL.glob("query-*.json"))],
                "api_query_counts": api_counts, "raw_pages": len(raw_files),
                "raw_sha256": hashes, "papers": len(papers), "people": len(people),
+               "identity_aliases": merged_id_count,
                "qualifying_people": sum(v["qualifying"] for v in people.values()),
                "institutions": len(institutions), "authorships": len(authorships),
                "paper_affiliations": len(paper_affiliations), "coauthor_pairs": len(co_rows),

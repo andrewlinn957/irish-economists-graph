@@ -30,7 +30,7 @@ This edge exists for **all** resolved publication-time affiliations, including e
 
 `IRISH_SHARED_INSTITUTION_YEAR` is a derived person-to-person edge only when both people have *publication bylines* naming the same institution in at least one common calendar year. It retains each person's supporting paper IDs. It does **not** prove their employment dates overlapped.
 
-The paper and affiliation edges are the source of truth; the person-person edges are reproducible projections. No name-only person merge is performed. The OpenAlex author ID is used where available; an unresolved byline gets an ID scoped to its paper and position.
+The paper and affiliation edges are the source of truth; the person-person edges are reproducible projections. OpenAlex author IDs are used where available. Because missing author IDs previously created one paper-scoped person per byline, the build now resolves only evidence-linked duplicates: a matching ORCID or byline email, or compatible names with a shared publication institution and co-author. An unresolved byline can also join a unique ORCID-bearing OpenAlex identity with a compatible name and publication institution. Conflicting ORCIDs or two bylines on the same paper block a merge. Reviewed exceptions are listed in `identity-overrides.json`; every applied alias and reason is exported in `output/identity-resolution.csv`. This is not a blanket same-name merge, and residual same-name records are not assumed to be one person. OpenAlex records that literally name `ESRI` as a person byline are excluded from the person graph; the raw source records remain archived.
 
 ## Artefacts and reproducibility
 

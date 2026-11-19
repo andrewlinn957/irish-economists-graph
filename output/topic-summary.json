@@ -1,11 +1,11 @@
 {
-  "papers": 6078,
+  "papers": 6077,
   "topics": 922,
-  "paper_topic_edges": 18234,
-  "topic_pairs": 4227,
+  "paper_topic_edges": 18231,
+  "topic_pairs": 4226,
   "sha256": {
     "topics.csv": "8cf7ea2c4258c8a7cf9e0f9e4cf843ad34a76f26b093f87f3b00642f23c82bf9",
-    "paper_topics.csv": "53703a153d57b62925700b1400f2771b9d5442cda725844add49941a4ad39a5b",
-    "topic_cooccurs.csv": "9c6f4816479abf75494daaacd5a8c6802ff6ca862b6a51c474f5b4305f1e938a"
+    "paper_topics.csv": "78c98033be61aa01c79bbe311e35dc2e5e26dc40a72afae1a123be02c8773afc",
+    "topic_cooccurs.csv": "055f168311de1914ad133a957df3f37ff54fa860e8452d7f413306e98674f16f"
   }
 }
