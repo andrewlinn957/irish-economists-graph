@@ -1,20 +1,22 @@
 const $ = s => document.querySelector(s);
 const details = $('#details'), results = $('#results'), search = $('#search');
 const kind = $('#kind'), host = $('#graph');
+let activeLens = $('#cluster-lens').value;
 const matchSearch = $('#match-search'), matchPicks = $('#match-picks'), matchResults = $('#match-results');
 let graph, selectedEdge = null, current = null, debounce, fitTimer, prominent = new Set();
 let visibleNodes = new Set(['person']);
 let visibleLabels = new Set(['person','institution','topic']);
 let visibleEdges = new Set(['coauthor','affiliation','topic','topic_pair','shared']);
 let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewClusters = new Map(), activeCluster = null, featuredClusters = new Set();
-let overviewData = null, scopeData = null, overviewMode = false, clusterDetailsBackup = null;
+let overviewData = null, overviewDataView = null, scopeData = null, scopeKey = null, overviewMode = false, clusterDetailsBackup = null;
+let overviewRequest = 0;
 let drillStack = [], drillChildren = [];
 const lensEdges = {coauthor:new Set(['coauthor']), topic:new Set(['topic','topic_pair']), institution:new Set(['affiliation'])};
 const palette = ['#2e7d5b','#be6a42','#5c76b7','#9a669f','#a88727','#408d9b','#8c694d','#6b8d40','#b45271','#4b7691','#9067b0','#b2784d','#418078','#967a35','#6576a1','#907c69'];
 function nodeId(n) { return typeof n === 'object' ? n.id : n; }
 function communityFields(id) { const n=overviewClusters.get(id); return n ? {communities:n.communities} : {}; }
-function clusterOf(n) { return n.communities?.[$('#cluster-lens').value]?.id || 'unconnected'; }
-function clusterLabel(n) { return n.communities?.[$('#cluster-lens').value]?.label || 'Unconnected'; }
+function clusterOf(n) { return n.communities?.[activeLens]?.id || 'unconnected'; }
+function clusterLabel(n) { return n.communities?.[activeLens]?.label || 'Unconnected'; }
 function countryMatches(country, choice=$('#country-filter').value) {
   if(choice==='all')return true;
   if(choice==='island')return country==='Ireland'||country==='Northern Ireland';
@@ -34,6 +36,13 @@ function refreshInstitutions() {
 }
 function scopedOverview() {
   const institution=$('#institution-filter').value;
+  const key=`${$('#country-filter').value}|${institution}|${overviewDataView}`;
+  if (scopeData && scopeKey === key) return scopeData;
+  if (!institution) {
+    scopeKey=key;
+    scopeData=overviewData;
+    return scopeData;
+  }
   const institutions=new Set(overviewData.nodes.filter(n=>n.kind==='institution'&&countryMatches(n.country)&&(!institution||n.id===institution)).map(n=>n.id));
   const people=new Set();
   for(const edge of overviewData.links)if(edge.type==='affiliation'){
@@ -48,12 +57,14 @@ function scopedOverview() {
     if(people.has(b))topics.add(a);
   }
   const ids=new Set([...institutions,...people,...topics]);
-  return {nodes:overviewData.nodes.filter(n=>ids.has(n.id)),
+  scopeKey=key;
+  scopeData={nodes:overviewData.nodes.filter(n=>ids.has(n.id)),
     links:overviewData.links.filter(e=>ids.has(nodeId(e.source))&&ids.has(nodeId(e.target)))};
+  return scopeData;
 }
 function hash(s) { let h=2166136261; for(const ch of s) h=Math.imul(h^ch.charCodeAt(0),16777619); return h>>>0; }
 function clusterColour(n) {
-  if ($('#cluster-lens').value === 'none') return {person:'#2e7d5b',institution:'#5c76b7',topic:'#be6a42'}[n.kind] || '#718277';
+  if (activeLens === 'none') return {person:'#2e7d5b',institution:'#5c76b7',topic:'#be6a42'}[n.kind] || '#718277';
   return clusterOf(n)==='unconnected' ? '#aeb8b2' : palette[hash(clusterOf(n))%palette.length];
 }
 function clusterAbbreviation(label) {
@@ -144,13 +155,14 @@ function endNode(n) { return typeof n==='object'?n:currentNodeMap.get(n); }
 function edgeVisible(l) { const a=endNode(l.source),b=endNode(l.target);return Boolean(a&&b&&visibleEdges.has(l.type)&&visibleNodes.has(a.kind)&&visibleNodes.has(b.kind)); }
 function edgeColour(l) {
   if (selectedEdge===l) return '#b65f20';
+  if (overviewMode && activeLens === 'none') return '#83a39470';
   const a=endNode(l.source), b=endNode(l.target);
   if (activeCluster && a && b && clusterOf(a)!==activeCluster && clusterOf(b)!==activeCluster) return '#d5ddd526';
   if (overviewMode) {
-    const lens=$('#cluster-lens').value;
+    const lens=activeLens;
     const same=a && b && clusterOf(a)===clusterOf(b);
     const inLens=(lens==='coauthor' && l.type==='coauthor') || (lens==='topic' && (l.type==='topic' || l.type==='topic_pair')) || (lens==='institution' && l.type==='affiliation');
-    return lens === 'none' ? '#83a39470' : inLens ? same ? '#769b8160' : '#8ca99b1c' : '#9daeba0b';
+    return inLens ? same ? '#769b8160' : '#8ca99b1c' : '#9daeba0b';
   }
   return l.type==='topic_pair'||l.type==='topic'?'#b3c3d9':l.type==='shared'?'#c6b5cd':'#bdcfc0';
 }
@@ -274,7 +286,9 @@ function renderDrill() {
 }
 function updateStyle() {
   if(!graph) return;
-  graph.nodeVisibility(nodeVisible).linkVisibility(edgeVisible).nodeColor(nodeColour).linkColor(edgeColour);
+  graph.nodeVisibility(overviewMode ? () => true : nodeVisible)
+    .linkVisibility(overviewMode ? () => true : edgeVisible)
+    .nodeColor(nodeColour).linkColor(edgeColour);
   graph.nodeCanvasObject(graph.nodeCanvasObject());
   updateLegend();
 }
@@ -372,10 +386,12 @@ function renderGraph(nodes, links, overview = false) {
   for (const l of links) { degrees.set(l.source, (degrees.get(l.source) || 0) + 1); degrees.set(l.target, (degrees.get(l.target) || 0) + 1); }
   prominent = new Set([...degrees].sort((a,b) => b[1] - a[1]).slice(0, 20).map(x => x[0]));
   graph = window.FoamGraph()(host).width(host.clientWidth).height(host.clientHeight)
+    .cooldownTime(overview ? activeLens === 'none' ? 3000 : nodes.length > 12000 ? 8000 : 12000 : 15000)
     .graphData({nodes,links}).nodeId('id').backgroundColor('#f7f8f5').nodeRelSize(6)
     .onRenderFramePre(drawClusterAreas)
     .onRenderFramePost(drawClusterLabels)
-    .nodeVisibility(nodeVisible).linkVisibility(edgeVisible).nodeColor(nodeColour)
+    .nodeVisibility(overview ? () => true : nodeVisible)
+    .linkVisibility(overview ? () => true : edgeVisible).nodeColor(nodeColour)
     .nodeLabel(n => $('#cluster-lens').value === 'none' ? n.label : `${n.label} · ${$('#cluster-lens').value} cluster: ${clusterLabel(n)}${n.communities?.[$('#cluster-lens').value]?.derived?' (associated)':''}`).nodeCanvasObjectMode(() => 'after')
     .nodeCanvasObject((n, ctx, scale) => {
       if(!nodeVisible(n) || !visibleLabels.has(n.kind)) return;
@@ -419,7 +435,7 @@ function renderOverviewSlice() {
   if (lens === 'none') {
     const nodes = scopeData.nodes.filter(n => visibleNodes.has(n.kind)).map(n => ({...n}));
     const selectedIds = new Set(nodes.map(n => n.id));
-    const links = scopeData.links.filter(l => selectedIds.has(nodeId(l.source)) && selectedIds.has(nodeId(l.target)))
+    const links = scopeData.links.filter(l => visibleEdges.has(l.type) && selectedIds.has(nodeId(l.source)) && selectedIds.has(nodeId(l.target)))
       .map(l => ({...l, source:nodeId(l.source), target:nodeId(l.target)}));
     renderGraph(nodes, links, true);
     details.innerHTML = `<h1>UK and Ireland economics research</h1><p>${safe($('#country-filter').selectedOptions[0].text)} · ${nodes.length.toLocaleString()} visible nodes · ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left panel to choose a country or institution, show institutions or topics, or select a clustering lens. Select a node or link to inspect its evidence.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
@@ -440,19 +456,24 @@ function renderOverviewSlice() {
   const chosen = new Set(ranked.slice(0, count).map(([id]) => id));
   const nodes = scopeData.nodes.filter(n => visibleNodes.has(n.kind) && chosen.has(n.communities?.[lens]?.id)).map(n => ({...n}));
   const ids = new Set(nodes.map(n => n.id));
-  const links = scopeData.links.filter(l => ids.has(nodeId(l.source)) && ids.has(nodeId(l.target)))
+  const links = scopeData.links.filter(l => visibleEdges.has(l.type) && ids.has(nodeId(l.source)) && ids.has(nodeId(l.target)))
     .map(l => ({...l, source:nodeId(l.source), target:nodeId(l.target)}));
   renderGraph(nodes, links, true);
   details.innerHTML = `<h1>UK and Ireland economics research</h1><p>${safe($('#country-filter').selectedOptions[0].text)} · showing ${count} of ${ranked.length} ${safe(lens)} communities, with ${nodes.length.toLocaleString()} people, institutions and topics and ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left slider to change how many communities appear. Search and focused views still cover the full dataset. Select a node or link to inspect its evidence. Colours and circles show algorithmic communities, not asserted group membership.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
 }
 async function openOverview(mode = 'people') {
+  const request = ++overviewRequest;
   showGraphView();
   results.hidden = true; $('#loading').hidden = false;
   try {
-    const d = await get(mode === 'topics' ? '/api/topic-overview' : `/api/overview?country=${encodeURIComponent($('#country-filter').value)}`);
+    const view = visibleNodes.has('topic') || $('#cluster-lens').value === 'topic' ? 'full' : 'people';
+    const d = await get(mode === 'topics' ? '/api/topic-overview' : `/api/overview?country=${encodeURIComponent($('#country-filter').value)}&view=${view}`);
+    if (request !== overviewRequest) return;
     current = null;
     if(mode==='people') {
       overviewData = d;
+      overviewDataView = view;
+      scopeData = null; scopeKey = null;
       overviewClusters = new Map(d.nodes.map(n=>[n.id,n]));
       refreshInstitutions();
       renderOverviewSlice();
@@ -460,7 +481,7 @@ async function openOverview(mode = 'people') {
       renderGraph(d.nodes, d.links);
     }
     if (mode === 'topics') details.innerHTML = `<h1>Research topics</h1><p>${d.nodes.length.toLocaleString()} topics · ${d.links.length.toLocaleString()} co-occurrence links</p><p>Two topics are linked when they appear on the same included paper. Click a line for supporting paper IDs.</p>`;
-  } catch(e) { error(e); } finally { $('#loading').hidden = true; }
+  } catch(e) { if (request === overviewRequest) error(e); } finally { if (request === overviewRequest) $('#loading').hidden = true; }
 }
 async function open(type, id) {
   drillStack=[];drillChildren=[];
@@ -583,9 +604,13 @@ $('#shared').addEventListener('change', () => { if (current?.type === 'person') 
 $('#overview').addEventListener('click', () => openOverview());
 $('#matchmaker-tab').addEventListener('click', showMatchmakerView);
 $('#cluster-lens').addEventListener('change',()=>{
+  activeLens=$('#cluster-lens').value;
   activeCluster=null;
   if(clusterDetailsBackup!==null){details.innerHTML=clusterDetailsBackup;clusterDetailsBackup=null}
-  if(overviewMode)renderOverviewSlice();else{updateStyle();applyClusterLayout()}
+  if(overviewMode) {
+    if($('#cluster-lens').value==='topic' && overviewDataView!=='full') openOverview();
+    else renderOverviewSlice();
+  } else {updateStyle();applyClusterLayout()}
 });
 $('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${scopeData ? new Set(scopeData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
 $('#cluster-count').addEventListener('change',()=>{if(overviewMode)renderOverviewSlice()});
@@ -625,8 +650,14 @@ $('#legend').addEventListener('click',e=>{
 });
 document.querySelectorAll('[data-node-type]').forEach(input=>input.addEventListener('change',()=>{
   input.checked?visibleNodes.add(input.dataset.nodeType):visibleNodes.delete(input.dataset.nodeType);
-  if(overviewMode) renderOverviewSlice(); else {updateStyle();applyClusterLayout()}
+  if(overviewMode) {
+    if(input.dataset.nodeType==='topic' && input.checked && overviewDataView!=='full') openOverview();
+    else renderOverviewSlice();
+  } else {updateStyle();applyClusterLayout()}
 }));
 document.querySelectorAll('[data-label-type]').forEach(input=>input.addEventListener('change',()=>{input.checked?visibleLabels.add(input.dataset.labelType):visibleLabels.delete(input.dataset.labelType);updateStyle()}));
-document.querySelectorAll('[data-edge-type]').forEach(input=>input.addEventListener('change',()=>{input.checked?visibleEdges.add(input.dataset.edgeType):visibleEdges.delete(input.dataset.edgeType);updateStyle();applyClusterLayout()}));
+document.querySelectorAll('[data-edge-type]').forEach(input=>input.addEventListener('change',()=>{
+  input.checked?visibleEdges.add(input.dataset.edgeType):visibleEdges.delete(input.dataset.edgeType);
+  if(overviewMode)renderOverviewSlice();else{updateStyle();applyClusterLayout()}
+}));
 openOverview();

@@ -2,10 +2,18 @@
 (() => {
   const cache = new Map();
   async function data(path) {
+    if (path.startsWith('overview-')) {
+      const country = path.slice('overview-'.length).replace(/(-people)?\.json$/, '');
+      for (const key of cache.keys()) {
+        if (key.startsWith('overview-') && !key.startsWith(`overview-${country}.`) && !key.startsWith(`overview-${country}-people.`)) cache.delete(key);
+      }
+    }
     if (!cache.has(path)) cache.set(path, fetch(`./data/${path}.gz`).then(async r => {
       if (!r.ok) throw Error('Unable to load graph data');
       if (!window.DecompressionStream) throw Error('This browser cannot read the compressed graph snapshot');
-      return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json();
+      const result = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json();
+      if (path.startsWith('overview-') && !path.endsWith('-people.json')) cache.delete(path.replace(/\.json$/, '-people.json'));
+      return result;
     }));
     return cache.get(path);
   }
@@ -56,7 +64,11 @@
     const url = new URL(path, location.href);
     const parts = url.pathname.split('/').filter(Boolean);
     const kind = parts[1];
-    if (kind === 'overview') return data(`overview-${url.searchParams.get('country') || 'island'}.json`);
+    if (kind === 'overview') {
+      const country = url.searchParams.get('country') || 'island';
+      const suffix = url.searchParams.get('view') === 'people' ? '-people' : '';
+      return data(`overview-${country}${suffix}.json`);
+    }
     if (kind === 'topic-overview') return data('topic-overview.json');
     if (kind === 'search') {
       const catalogue = await data('catalogue.json');

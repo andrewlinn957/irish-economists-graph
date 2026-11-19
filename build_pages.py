@@ -69,7 +69,7 @@ class Shards:
 
 def main():
     sys.path.insert(0, str(ROOT / 'ui'))
-    from server import overview, country_overview, topic_overview, matchmaker_data
+    from server import overview, country_overview, topic_overview, matchmaker_data, people_view
 
     people_rows, paper_rows = rows('people'), rows('papers')
     inst_rows, topic_rows = rows('institutions'), rows('topics')
@@ -82,7 +82,9 @@ def main():
     topics = {r['topic_id']: r for r in topic_rows}
     graph = overview()
     for country in ('island', 'Ireland', 'Northern Ireland', 'England', 'Scotland', 'Wales', 'uk', 'all'):
-        write(DATA / f'overview-{country}.json', country_overview(country))
+        country_graph = country_overview(country)
+        write(DATA / f'overview-{country}.json', country_graph)
+        write(DATA / f'overview-{country}-people.json', people_view(country_graph))
     write(DATA / 'topic-overview.json', topic_overview())
 
     catalogue = {

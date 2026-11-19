@@ -2,6 +2,7 @@
 """Read-only, Tailscale-bound UK and Ireland economists graph viewer."""
 import base64
 import csv
+import gzip
 import json
 import os
 import xml.etree.ElementTree as ET
@@ -18,9 +19,33 @@ HOST = os.environ.get('UKIE_GRAPH_HOST', '100.116.32.107')
 PORT = int(os.environ.get('UKIE_GRAPH_PORT', '8127'))
 OUTPUT = Path(os.environ.get('ECON_GRAPH_OUTPUT', HERE.parent / 'output'))
 OVERVIEW_FILE = OUTPUT / 'irish-economists.graphml'
+SNAPSHOT_DIR = HERE.parent / 'docs' / 'data'
+SNAPSHOT_INPUTS = (OVERVIEW_FILE, OUTPUT / 'topics.csv', OUTPUT / 'topic_cooccurs.csv',
+                   OUTPUT / 'paper_topics.csv', OUTPUT / 'authorships.csv', Path(__file__))
+SNAPSHOT_COUNTRIES = {'island', 'Ireland', 'Northern Ireland', 'England', 'Scotland', 'Wales', 'uk', 'all'}
 _overview = None
 _country_overviews = {}
 _matchmaker_data = None
+
+
+def snapshot_file(country, view='full'):
+    if country not in SNAPSHOT_COUNTRIES or view not in {'full', 'people'}:
+        return None
+    suffix = '-people' if view == 'people' else ''
+    path = SNAPSHOT_DIR / f'overview-{country}{suffix}.json.gz'
+    if not path.is_file():
+        return None
+    try:
+        if any(path.stat().st_mtime_ns < source.stat().st_mtime_ns for source in SNAPSHOT_INPUTS):
+            return None
+    except FileNotFoundError:
+        return None
+    return path
+
+
+def people_view(graph):
+    return {'nodes': [node for node in graph['nodes'] if node['kind'] != 'topic'],
+            'links': [edge for edge in graph['links'] if edge['type'] in {'coauthor', 'affiliation'}]}
 
 
 def add_clusters(nodes, links):
@@ -95,6 +120,11 @@ def add_clusters(nodes, links):
 def overview():
     global _overview
     if _overview is not None:
+        return _overview
+    snapshot = snapshot_file('all')
+    if snapshot:
+        with gzip.open(snapshot, 'rt', encoding='utf-8') as source:
+            _overview = json.load(source)
         return _overview
     ns = {'g': 'http://graphml.graphdrawing.org/xmlns'}
     root = ET.parse(OVERVIEW_FILE).getroot()
@@ -374,7 +404,22 @@ class Handler(BaseHTTPRequestHandler):
                 if parts[1] == 'search':
                     body = search(params.get('q', [''])[0], params.get('kind', ['person'])[0])
                 elif parts[1] == 'overview' and len(parts) == 2:
-                    body = country_overview(params.get('country', ['island'])[0])
+                    country = params.get('country', ['island'])[0]
+                    view = params.get('view', ['full'])[0]
+                    snapshot = snapshot_file(country, view)
+                    if snapshot:
+                        data = snapshot.read_bytes()
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json; charset=utf-8')
+                        self.send_header('Content-Encoding', 'gzip')
+                        self.send_header('Cache-Control', 'no-store')
+                        self.send_header('X-Content-Type-Options', 'nosniff')
+                        self.send_header('Content-Length', str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
+                    full = country_overview(country)
+                    body = people_view(full) if view == 'people' else full
                 elif parts[1] == 'topic-overview' and len(parts) == 2:
                     body = topic_overview()
                 elif parts[1] == 'matchmaker' and len(parts) == 3 and parts[2] == 'search':
