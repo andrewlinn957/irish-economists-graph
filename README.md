@@ -40,7 +40,7 @@ The paper and affiliation edges are the source of truth; the person-person edges
 - `output/summary.json` records counts, query parameters and raw-file SHA-256 hashes.
 - `output/people.csv`, `papers.csv`, `institutions.csv`, `authorships.csv`, `paper_affiliations.csv`, `coauthored.csv`, and `shared_institution_year.csv` are the derived authorship graph. `topics.csv`, `paper_topics.csv` and `topic_cooccurs.csv` are the topic layer. `topic-summary.json` records their counts and hashes. `collect.py build` runs the topic derivation from the preserved work records.
 - `output/irish-economists.graphml` is a manageable Gephi/yEd visual projection: qualifying people, target institutions, qualifying-person co-authorships and evidence-backed person–institution links. The full network, including external collaborators and shared-institution-year edges, remains in Neo4j and CSV.
-- `neo4j-import.cypher` loads these into distinct `Irish*` labels and `IRISH_*` relationships; it does not touch China graph labels or run IDs.
+- `neo4j-import.cypher` loads these into distinct `Irish*` labels and `IRISH_*` relationships; it does not touch China graph labels or run IDs. `python3 load_neo4j.py --replace` stages the current CSVs, replaces only those Irish labels, and reconciles all node and relationship counts. Preserve the prior `output/` directory before replacing a live graph so the previous version can be reimported if needed.
 
 ## Private viewer
 
