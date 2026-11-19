@@ -3,7 +3,7 @@ const details = $('#details'), results = $('#results'), search = $('#search');
 const kind = $('#kind'), host = $('#graph');
 const matchSearch = $('#match-search'), matchPicks = $('#match-picks'), matchResults = $('#match-results');
 let graph, selectedEdge = null, current = null, debounce, fitTimer, prominent = new Set();
-let visibleNodes = new Set(['person','institution','topic']);
+let visibleNodes = new Set(['person']);
 let visibleLabels = new Set(['person','institution','topic']);
 let visibleEdges = new Set(['coauthor','affiliation','topic','topic_pair','shared']);
 let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewClusters = new Map(), activeCluster = null, featuredClusters = new Set();
@@ -14,7 +14,10 @@ function communityFields(id) { const n=overviewClusters.get(id); return n ? {com
 function clusterOf(n) { return n.communities?.[$('#cluster-lens').value]?.id || 'unconnected'; }
 function clusterLabel(n) { return n.communities?.[$('#cluster-lens').value]?.label || 'Unconnected'; }
 function hash(s) { let h=2166136261; for(const ch of s) h=Math.imul(h^ch.charCodeAt(0),16777619); return h>>>0; }
-function clusterColour(n) { return clusterOf(n)==='unconnected' ? '#aeb8b2' : palette[hash(clusterOf(n))%palette.length]; }
+function clusterColour(n) {
+  if ($('#cluster-lens').value === 'none') return {person:'#2e7d5b',institution:'#5c76b7',topic:'#be6a42'}[n.kind] || '#718277';
+  return clusterOf(n)==='unconnected' ? '#aeb8b2' : palette[hash(clusterOf(n))%palette.length];
+}
 function clusterAbbreviation(label) {
   const words = String(label || '').split(/[^\p{L}\p{N}]+/u).filter(word => word && !/^(and|of|the|in|on|for|at|with)$/i.test(word));
   return words.slice(0, 5).map(word => word[0].toUpperCase()).join('') || '?';
@@ -34,7 +37,7 @@ function shortTopicTitle(title) {
 let clusterFrameLabels = [];
 function drawClusterAreas(ctx, scale) {
   clusterFrameLabels = [];
-  if (!overviewMode) return;
+  if (!overviewMode || $('#cluster-lens').value === 'none') return;
   const lens = $('#cluster-lens').value;
   const groups = new Map();
   for (const n of currentNodes) {
@@ -109,11 +112,16 @@ function edgeColour(l) {
     const lens=$('#cluster-lens').value;
     const same=a && b && clusterOf(a)===clusterOf(b);
     const inLens=(lens==='coauthor' && l.type==='coauthor') || (lens==='topic' && (l.type==='topic' || l.type==='topic_pair')) || (lens==='institution' && l.type==='affiliation');
-    return inLens ? same ? '#769b8160' : '#8ca99b1c' : '#9daeba0b';
+    return lens === 'none' ? '#83a39470' : inLens ? same ? '#769b8160' : '#8ca99b1c' : '#9daeba0b';
   }
   return l.type==='topic_pair'||l.type==='topic'?'#b3c3d9':l.type==='shared'?'#c6b5cd':'#bdcfc0';
 }
 function updateLegend() {
+  if ($('#cluster-lens').value === 'none') {
+    $('#cluster-heading').textContent = 'No clustering';
+    $('#legend-list').replaceChildren();
+    return;
+  }
   const counts=new Map(); for(const n of currentNodes) if(nodeVisible(n)&&clusterOf(n)!=='unconnected') counts.set(clusterOf(n),(counts.get(clusterOf(n))||0)+1);
   const rows=[...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   const lens=$('#cluster-lens').selectedOptions[0].text;
@@ -133,6 +141,14 @@ function updateStyle() {
 function applyClusterLayout(reheat = true) {
   if (!graph || !window.FoamForces) return;
   const lens = $('#cluster-lens').value;
+  if (lens === 'none') {
+    featuredClusters = new Set();
+    graph.d3Force('clusterX', null).d3Force('clusterY', null);
+    const linkForce = graph.d3Force('link');
+    if (linkForce) linkForce.strength(l => edgeVisible(l) ? 0.045 : 0);
+    if (reheat) graph.d3ReheatSimulation();
+    return;
+  }
   const networkTypes = {
     coauthor: new Set(['coauthor']),
     topic: new Set(['topic', 'topic_pair']),
@@ -220,7 +236,7 @@ function renderGraph(nodes, links, overview = false) {
     .onRenderFramePre(drawClusterAreas)
     .onRenderFramePost(drawClusterLabels)
     .nodeVisibility(nodeVisible).linkVisibility(edgeVisible).nodeColor(nodeColour)
-    .nodeLabel(n => `${n.label} · ${$('#cluster-lens').value} cluster: ${clusterLabel(n)}${n.communities?.[$('#cluster-lens').value]?.derived?' (associated)':''}`).nodeCanvasObjectMode(() => 'after')
+    .nodeLabel(n => $('#cluster-lens').value === 'none' ? n.label : `${n.label} · ${$('#cluster-lens').value} cluster: ${clusterLabel(n)}${n.communities?.[$('#cluster-lens').value]?.derived?' (associated)':''}`).nodeCanvasObjectMode(() => 'after')
     .nodeCanvasObject((n, ctx, scale) => {
       if(!nodeVisible(n) || !visibleLabels.has(n.kind)) return;
       if(overviewMode && scale < 1.2) return;
@@ -257,6 +273,16 @@ function showEdge(l) {
 function renderOverviewSlice() {
   if (!overviewData) return;
   const lens = $('#cluster-lens').value;
+  $('#cluster-count-control').hidden = lens === 'none';
+  if (lens === 'none') {
+    const nodes = overviewData.nodes.filter(n => visibleNodes.has(n.kind)).map(n => ({...n}));
+    const selectedIds = new Set(nodes.map(n => n.id));
+    const links = overviewData.links.filter(l => selectedIds.has(nodeId(l.source)) && selectedIds.has(nodeId(l.target)))
+      .map(l => ({...l, source:nodeId(l.source), target:nodeId(l.target)}));
+    renderGraph(nodes, links, true);
+    details.innerHTML = `<h1>Irish economics research</h1><p>Unclustered network · ${nodes.length.toLocaleString()} visible nodes · ${links.length.toLocaleString()} evidence-backed links.</p><p>Use the left panel to show institutions or topics, or select a clustering lens. Select a node or link to inspect its evidence.</p><p class="caution">Source: OpenAlex publication bylines, not a complete RePEc census.</p>`;
+    return;
+  }
   const sizes = new Map();
   for (const n of overviewData.nodes) {
     const membership = n.communities?.[lens];
@@ -270,7 +296,7 @@ function renderOverviewSlice() {
   const count = Number(slider.value);
   $('#cluster-count-value').textContent = `${count} of ${ranked.length}`;
   const chosen = new Set(ranked.slice(0, count).map(([id]) => id));
-  const nodes = overviewData.nodes.filter(n => chosen.has(n.communities?.[lens]?.id)).map(n => ({...n}));
+  const nodes = overviewData.nodes.filter(n => visibleNodes.has(n.kind) && chosen.has(n.communities?.[lens]?.id)).map(n => ({...n}));
   const ids = new Set(nodes.map(n => n.id));
   const links = overviewData.links.filter(l => ids.has(nodeId(l.source)) && ids.has(nodeId(l.target)))
     .map(l => ({...l, source:nodeId(l.source), target:nodeId(l.target)}));
@@ -406,7 +432,10 @@ $('#cluster-lens').addEventListener('change',()=>{activeCluster=null;if(overview
 $('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${overviewData ? new Set(overviewData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
 $('#cluster-count').addEventListener('change',()=>{if(overviewMode)renderOverviewSlice()});
 $('#legend').addEventListener('click',e=>{const b=e.target.closest('[data-cluster]');if(!b)return;activeCluster=activeCluster===b.dataset.cluster?null:b.dataset.cluster;updateStyle();if(window.innerWidth<=850)setMenu(false)});
-document.querySelectorAll('[data-node-type]').forEach(input=>input.addEventListener('change',()=>{input.checked?visibleNodes.add(input.dataset.nodeType):visibleNodes.delete(input.dataset.nodeType);updateStyle();applyClusterLayout()}));
+document.querySelectorAll('[data-node-type]').forEach(input=>input.addEventListener('change',()=>{
+  input.checked?visibleNodes.add(input.dataset.nodeType):visibleNodes.delete(input.dataset.nodeType);
+  if(overviewMode) renderOverviewSlice(); else {updateStyle();applyClusterLayout()}
+}));
 document.querySelectorAll('[data-label-type]').forEach(input=>input.addEventListener('change',()=>{input.checked?visibleLabels.add(input.dataset.labelType):visibleLabels.delete(input.dataset.labelType);updateStyle()}));
 document.querySelectorAll('[data-edge-type]').forEach(input=>input.addEventListener('change',()=>{input.checked?visibleEdges.add(input.dataset.edgeType):visibleEdges.delete(input.dataset.edgeType);updateStyle();applyClusterLayout()}));
 openOverview();

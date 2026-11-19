@@ -32,16 +32,18 @@
         <section class="control-section">
           <h2>Clusters</h2>
           <label for="cluster-lens">Cluster by</label>
-          <select id="cluster-lens" aria-label="Cluster graph by network"><option value="coauthor">Co-authorship network</option><option value="topic">Topic network</option><option value="institution">Institution network</option></select>
-          <label for="cluster-count">Clusters shown <output id="cluster-count-value" for="cluster-count">8</output></label>
-          <input id="cluster-count" type="range" min="1" max="30" value="8" aria-label="Number of largest clusters shown">
-          <p class="control-hint">Search to inspect people and topics outside the displayed clusters.</p>
+          <select id="cluster-lens" aria-label="Cluster graph by network"><option value="none" selected>No clustering</option><option value="coauthor">Co-authorship network</option><option value="topic">Topic network</option><option value="institution">Institution network</option></select>
+          <div id="cluster-count-control" hidden>
+            <label for="cluster-count">Clusters shown <output id="cluster-count-value" for="cluster-count">8</output></label>
+            <input id="cluster-count" type="range" min="1" max="30" value="8" aria-label="Number of largest clusters shown">
+            <p class="control-hint">Search to inspect people and topics outside the displayed clusters.</p>
+          </div>
         </section>
         <section class="control-section">
           <h2>Nodes</h2>
           <label><input type="checkbox" data-node-type="person" checked> People</label>
-          <label><input type="checkbox" data-node-type="institution" checked> Institutions</label>
-          <label><input type="checkbox" data-node-type="topic" checked> Topics</label>
+          <label><input type="checkbox" data-node-type="institution"> Institutions</label>
+          <label><input type="checkbox" data-node-type="topic"> Topics</label>
         </section>
         <section class="control-section">
           <h2>Labels</h2>
