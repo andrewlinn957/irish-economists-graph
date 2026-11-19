@@ -7,7 +7,7 @@ let visibleNodes = new Set(['person']);
 let visibleLabels = new Set(['person','institution','topic']);
 let visibleEdges = new Set(['coauthor','affiliation','topic','topic_pair','shared']);
 let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewClusters = new Map(), activeCluster = null, featuredClusters = new Set();
-let overviewData = null, overviewMode = false;
+let overviewData = null, overviewMode = false, clusterDetailsBackup = null;
 const palette = ['#2e7d5b','#be6a42','#5c76b7','#9a669f','#a88727','#408d9b','#8c694d','#6b8d40','#b45271','#4b7691','#9067b0','#b2784d','#418078','#967a35','#6576a1','#907c69'];
 function nodeId(n) { return typeof n === 'object' ? n.id : n; }
 function communityFields(id) { const n=overviewClusters.get(id); return n ? {communities:n.communities} : {}; }
@@ -122,15 +122,44 @@ function updateLegend() {
     $('#legend-list').replaceChildren();
     return;
   }
-  const counts=new Map(); for(const n of currentNodes) if(nodeVisible(n)&&clusterOf(n)!=='unconnected') counts.set(clusterOf(n),(counts.get(clusterOf(n))||0)+1);
+  const counts=new Map(), representatives=new Map();
+  for(const n of currentNodes) if(nodeVisible(n)&&clusterOf(n)!=='unconnected') {
+    const id=clusterOf(n);
+    counts.set(id,(counts.get(id)||0)+1);
+    if(!representatives.has(id)) representatives.set(id,n);
+  }
   const rows=[...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   const lens=$('#cluster-lens').selectedOptions[0].text;
   $('#cluster-heading').textContent=`${lens} · ${counts.size} clusters`;
-  const limit = overviewMode ? Math.min(40, Math.max(12, Number($('#cluster-count').value))) : 12;
-  $('#legend-list').innerHTML=rows.slice(0,limit).map(([name,count])=>{
-    const n=currentNodes.find(n=>nodeVisible(n)&&clusterOf(n)===name);
-    return `<button data-cluster="${safe(name)}" class="${name===activeCluster?'active':''}"><span class="swatch" style="background:${clusterColour(n)}"></span><span>${safe(clusterLabel(n))}</span><span class="legend-count">${count}</span></button>`;
-  }).join('')+(rows.length>limit?`<div class="meta">${rows.length-limit} more communities</div>`:'');
+  $('#legend-list').innerHTML=rows.map(([name,count])=>{
+    const n=representatives.get(name);
+    return `<button type="button" data-cluster="${safe(name)}" class="${name===activeCluster?'active':''}" aria-pressed="${name===activeCluster}" title="View cluster details"><span class="swatch" style="background:${clusterColour(n)}"></span><span>${safe(clusterLabel(n))}</span><span class="legend-count">${count}</span></button>`;
+  }).join('');
+}
+function renderClusterDetails(id) {
+  const lens = $('#cluster-lens').value;
+  const sourceNodes = overviewData?.nodes?.length ? overviewData.nodes : currentNodes;
+  const members = sourceNodes.filter(n => n.communities?.[lens]?.id === id);
+  const shown = currentNodes.filter(n => nodeVisible(n) && n.communities?.[lens]?.id === id);
+  const core = members.filter(n => !n.communities[lens].derived);
+  const representative = core[0] || members[0];
+  const title = representative?.communities?.[lens]?.label || 'Cluster';
+  const lensName = $('#cluster-lens').selectedOptions[0].text;
+  const count = n => n.toLocaleString();
+  const list = (kind, heading) => {
+    const rows = members.filter(n => n.kind === kind).sort((a,b) =>
+      Number(a.communities[lens].derived) - Number(b.communities[lens].derived) || a.label.localeCompare(b.label));
+    if (!rows.length) return '';
+    const item = n => `<button class="item" data-open="${kind}" data-id="${safe(n.id)}">${safe(n.label)}${n.communities[lens].derived ? '<span class="meta">Associated with this cluster</span>' : ''}</button>`;
+    const first = rows.slice(0,20).map(item).join('');
+    const rest = rows.length > 20 ? `<details class="cluster-more"><summary>Show ${count(rows.length-20)} more</summary>${rows.slice(20).map(item).join('')}</details>` : '';
+    return `<h2>${heading} · ${count(rows.length)}</h2><div class="cluster-member-list">${first}${rest}</div>`;
+  };
+  details.innerHTML = `<div class="cluster-detail"><p class="eyebrow">${safe(lensName)} cluster</p><h1>${safe(title)}</h1>
+    <p>${count(core.length)} core members · ${count(members.length - core.length)} associated nodes · ${count(shown.length)} currently shown</p>
+    <p class="caution">This is an algorithmic grouping, not a verified institutional affiliation or research collaboration. Associated nodes are assigned from their links to core members.</p>
+    ${list('person','People')}${list('institution','Institutions')}${list('topic','Topics')}</div>`;
+  setInspector(true);
 }
 function updateStyle() {
   if(!graph) return;
@@ -227,7 +256,7 @@ function renderGraph(nodes, links, overview = false) {
   clearTimeout(fitTimer);
   if (graph?._destructor) graph._destructor();
   graph = null; host.innerHTML = ''; selectedEdge = null; overviewMode = overview;
-  currentNodes=nodes; currentLinks=links; currentNodeMap=new Map(nodes.map(n=>[n.id,n])); activeCluster=null;
+  currentNodes=nodes; currentLinks=links; currentNodeMap=new Map(nodes.map(n=>[n.id,n])); activeCluster=null; clusterDetailsBackup=null;
   const degrees = new Map(nodes.map(n => [n.id, 0]));
   for (const l of links) { degrees.set(l.source, (degrees.get(l.source) || 0) + 1); degrees.set(l.target, (degrees.get(l.target) || 0) + 1); }
   prominent = new Set([...degrees].sort((a,b) => b[1] - a[1]).slice(0, 20).map(x => x[0]));
@@ -428,10 +457,27 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { results.hi
 $('#shared').addEventListener('change', () => { if (current?.type === 'person') open('person', current.id); });
 $('#overview').addEventListener('click', () => openOverview());
 $('#matchmaker-tab').addEventListener('click', showMatchmakerView);
-$('#cluster-lens').addEventListener('change',()=>{activeCluster=null;if(overviewMode)renderOverviewSlice();else{updateStyle();applyClusterLayout()}});
+$('#cluster-lens').addEventListener('change',()=>{
+  activeCluster=null;
+  if(clusterDetailsBackup!==null){details.innerHTML=clusterDetailsBackup;clusterDetailsBackup=null}
+  if(overviewMode)renderOverviewSlice();else{updateStyle();applyClusterLayout()}
+});
 $('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${overviewData ? new Set(overviewData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
 $('#cluster-count').addEventListener('change',()=>{if(overviewMode)renderOverviewSlice()});
-$('#legend').addEventListener('click',e=>{const b=e.target.closest('[data-cluster]');if(!b)return;activeCluster=activeCluster===b.dataset.cluster?null:b.dataset.cluster;updateStyle();if(window.innerWidth<=850)setMenu(false)});
+$('#legend').addEventListener('click',e=>{
+  const b=e.target.closest('[data-cluster]');if(!b)return;
+  if(activeCluster===b.dataset.cluster){
+    activeCluster=null;
+    details.innerHTML=clusterDetailsBackup ?? details.innerHTML;
+    clusterDetailsBackup=null;
+  }else{
+    if(clusterDetailsBackup===null)clusterDetailsBackup=details.innerHTML;
+    activeCluster=b.dataset.cluster;
+    renderClusterDetails(activeCluster);
+  }
+  updateStyle();
+  if(window.innerWidth<=850)setMenu(false);
+});
 document.querySelectorAll('[data-node-type]').forEach(input=>input.addEventListener('change',()=>{
   input.checked?visibleNodes.add(input.dataset.nodeType):visibleNodes.delete(input.dataset.nodeType);
   if(overviewMode) renderOverviewSlice(); else {updateStyle();applyClusterLayout()}

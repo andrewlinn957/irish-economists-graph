@@ -27,6 +27,12 @@ main.inspector-minimised{grid-template-columns:minmax(0,1fr)}
 #legend{position:static;max-width:none;max-height:none;overflow:visible;background:transparent;border:0;border-radius:0;box-shadow:none;padding:12px 0}
 #legend-list{max-height:230px;overflow:auto}
 #legend-list button{min-height:31px}
+#legend-list button.active{border-left:3px solid #397b58;padding-left:6px;font-weight:700}
+#legend-list button:focus-visible{outline:2px solid #397b58;outline-offset:-2px}
+.cluster-detail .eyebrow{margin-bottom:7px}
+.cluster-member-list{border-top:1px solid #e1e9e1}
+.cluster-more summary{cursor:pointer;padding:10px 2px;color:#286c46;font-size:12px;font-weight:600}
+.cluster-more summary:focus-visible{outline:2px solid #397b58}
 @media(max-width:850px){
   #menu-toggle{left:8px;top:8px;width:44px;height:44px}
   #inspector-toggle{right:8px;top:8px;min-height:44px}
