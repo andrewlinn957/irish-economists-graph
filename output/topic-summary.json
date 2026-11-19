@@ -1,0 +1,11 @@
+{
+  "papers": 6078,
+  "topics": 922,
+  "paper_topic_edges": 18234,
+  "topic_pairs": 4227,
+  "sha256": {
+    "topics.csv": "8cf7ea2c4258c8a7cf9e0f9e4cf843ad34a76f26b093f87f3b00642f23c82bf9",
+    "paper_topics.csv": "53703a153d57b62925700b1400f2771b9d5442cda725844add49941a4ad39a5b",
+    "topic_cooccurs.csv": "9c6f4816479abf75494daaacd5a8c6802ff6ca862b6a51c474f5b4305f1e938a"
+  }
+}

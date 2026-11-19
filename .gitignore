@@ -1,0 +1,11 @@
+# Local credentials, service state and Python artefacts
+.env
+*.env
+__pycache__/
+*.pyc
+*.log
+.venv/
+
+# Preserved local-only prior export and exploratory RePEc mirror
+output-2016-2026/
+raw/repec/

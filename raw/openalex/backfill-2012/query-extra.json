@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://api.openalex.org/works",
+  "params": {
+    "filter": "from_publication_date:2012-01-01,to_publication_date:2016-11-17,authorships.institutions.id:I4387154713|I4405260289|I70277191|I7478328,topics.field.id:20,type:article|preprint|report",
+    "per-page": 200,
+    "page": 1,
+    "select": "id,title,publication_date,doi,type,authorships,primary_topic,topics,ids,is_retracted"
+  },
+  "retrieved": "2026-11-19"
+}

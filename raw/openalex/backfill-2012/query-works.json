@@ -1,0 +1,10 @@
+{
+  "endpoint": "https://api.openalex.org/works",
+  "params": {
+    "filter": "from_publication_date:2012-01-01,to_publication_date:2016-11-17,authorships.institutions.id:I100930933|I205274468|I27577105|I188760350|I230495080|I42934936|I157286207|I142762351|I4210144925|I4387153685|I4387153671|I4387155068|I4387152698|I63871047|I82288201|I18452974|I4387156359|I4387152804|I151939572|I882645478|I4210100923|I4387155865|I126231945|I138801177|I132389103|I29745156,topics.field.id:20,type:article|preprint|report",
+    "per-page": 200,
+    "page": 1,
+    "select": "id,title,publication_date,doi,type,authorships,primary_topic,topics,ids,is_retracted"
+  },
+  "retrieved": "2026-11-19"
+}
