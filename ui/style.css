@@ -30,6 +30,8 @@ main.inspector-minimised{grid-template-columns:minmax(0,1fr)}
 #legend-list button.active{border-left:3px solid #397b58;padding-left:6px;font-weight:700}
 #legend-list button:focus-visible{outline:2px solid #397b58;outline-offset:-2px}
 .cluster-detail .eyebrow{margin-bottom:7px}
+.drill-action{display:block;width:100%;min-height:42px;margin:16px 0;padding:9px 12px;border:1px solid #90b69a;border-radius:5px;background:#eaf3e9;color:#205236;text-align:left;font-size:13px;font-weight:650}
+.drill-action:hover,.drill-action:focus-visible{background:#dcebdd;outline:2px solid #397b58;outline-offset:2px}
 .cluster-member-list{border-top:1px solid #e1e9e1}
 .cluster-more summary{cursor:pointer;padding:10px 2px;color:#286c46;font-size:12px;font-weight:600}
 .cluster-more summary:focus-visible{outline:2px solid #397b58}

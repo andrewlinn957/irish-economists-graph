@@ -8,6 +8,8 @@ let visibleLabels = new Set(['person','institution','topic']);
 let visibleEdges = new Set(['coauthor','affiliation','topic','topic_pair','shared']);
 let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewClusters = new Map(), activeCluster = null, featuredClusters = new Set();
 let overviewData = null, overviewMode = false, clusterDetailsBackup = null;
+let drillStack = [], drillChildren = [];
+const lensEdges = {coauthor:new Set(['coauthor']), topic:new Set(['topic','topic_pair']), institution:new Set(['affiliation'])};
 const palette = ['#2e7d5b','#be6a42','#5c76b7','#9a669f','#a88727','#408d9b','#8c694d','#6b8d40','#b45271','#4b7691','#9067b0','#b2784d','#418078','#967a35','#6576a1','#907c69'];
 function nodeId(n) { return typeof n === 'object' ? n.id : n; }
 function communityFields(id) { const n=overviewClusters.get(id); return n ? {communities:n.communities} : {}; }
@@ -117,6 +119,13 @@ function edgeColour(l) {
   return l.type==='topic_pair'||l.type==='topic'?'#b3c3d9':l.type==='shared'?'#c6b5cd':'#bdcfc0';
 }
 function updateLegend() {
+  if (drillStack.length) {
+    const parent=drillStack.at(-1);
+    $('#cluster-heading').textContent=`Inside ${parent.label}`;
+    $('#legend-list').innerHTML=`<button type="button" data-drill-back="1">← ${drillStack.length===1?'All clusters':'Parent cluster'}</button>`+
+      drillChildren.map((g,i)=>`<button type="button" data-drill-child="${i}" title="Explore subcluster"><span class="swatch" style="background:${palette[hash(g.id)%palette.length]}"></span><span>${safe(g.label)}</span><span class="legend-count">${g.ids.length}</span></button>`).join('');
+    return;
+  }
   if ($('#cluster-lens').value === 'none') {
     $('#cluster-heading').textContent = 'No clustering';
     $('#legend-list').replaceChildren();
@@ -158,8 +167,74 @@ function renderClusterDetails(id) {
   details.innerHTML = `<div class="cluster-detail"><p class="eyebrow">${safe(lensName)} cluster</p><h1>${safe(title)}</h1>
     <p>${count(core.length)} core members · ${count(members.length - core.length)} associated nodes · ${count(shown.length)} currently shown</p>
     <p class="caution">This is an algorithmic grouping, not a verified institutional affiliation or research collaboration. Associated nodes are assigned from their links to core members.</p>
+    ${core.length>=4 && overviewMode ? '<button class="drill-action" type="button" data-drill-start="1">Find clusters inside this cluster</button>' : ''}
     ${list('person','People')}${list('institution','Institutions')}${list('topic','Topics')}</div>`;
   setInspector(true);
+}
+function nestedCommunities(ids, lens, depth) {
+  // Local modularity optimisation on the selected lens's induced subgraph.
+  // A rising resolution exposes finer structure at each depth; IDs remain view-only.
+  const vertices=[...ids].sort(), allowed=lensEdges[lens], adjacency=new Map(vertices.map(id=>[id,new Map()]));
+  for(const e of overviewData.links) {
+    const a=nodeId(e.source), b=nodeId(e.target);
+    if(!allowed?.has(e.type)||a===b||!adjacency.has(a)||!adjacency.has(b))continue;
+    const w=Math.sqrt(Math.min(Number(e.weight)||1,12));
+    adjacency.get(a).set(b,(adjacency.get(a).get(b)||0)+w);
+    adjacency.get(b).set(a,(adjacency.get(b).get(a)||0)+w);
+  }
+  const degree=new Map(vertices.map(id=>[id,[...adjacency.get(id).values()].reduce((a,b)=>a+b,0)]));
+  const total=[...degree.values()].reduce((a,b)=>a+b,0);
+  if(!total)return [];
+  const group=new Map(vertices.map(id=>[id,id])), volume=new Map(degree), resolution=1.6+depth*0.8;
+  const order=[...vertices].sort((a,b)=>degree.get(b)-degree.get(a)||a.localeCompare(b));
+  for(let pass=0;pass<20;pass++) {
+    let moves=0;
+    for(const id of order) {
+      const own=group.get(id), k=degree.get(id);
+      if(!k)continue;
+      volume.set(own,volume.get(own)-k);
+      const weights=new Map();
+      for(const [other,w] of adjacency.get(id))weights.set(group.get(other),(weights.get(group.get(other))||0)+w);
+      let best=own, gain=(weights.get(own)||0)-resolution*k*(volume.get(own)||0)/total;
+      for(const [candidate,inside] of weights) {
+        const score=inside-resolution*k*(volume.get(candidate)||0)/total;
+        if(score>gain+1e-8 || (Math.abs(score-gain)<1e-8 && candidate<best)){best=candidate;gain=score;}
+      }
+      group.set(id,best);volume.set(best,(volume.get(best)||0)+k);
+      if(best!==own)moves++;
+    }
+    if(!moves)break;
+  }
+  const groups=new Map();
+  for(const id of vertices){const key=group.get(id);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(id);}
+  if(groups.size<2||groups.size>Math.max(20,vertices.length/2))return [];
+  const records=new Map(overviewData.nodes.map(n=>[n.id,n]));
+  const representativeKind={coauthor:'person',topic:'topic',institution:'institution'}[lens];
+  return [...groups.values()].sort((a,b)=>b.length-a.length||a[0].localeCompare(b[0])).map((members,i)=>{
+    const options=members.filter(id=>records.get(id)?.kind===representativeKind);
+    const representative=[...(options.length?options:members)].sort((a,b)=>degree.get(b)-degree.get(a)||a.localeCompare(b))[0];
+    return {id:`sub-${depth}-${i}`,label:records.get(representative)?.label||`Subcluster ${i+1}`,ids:members};
+  });
+}
+function renderDrill() {
+  const parent=drillStack.at(-1), lens=$('#cluster-lens').value;
+  drillChildren=nestedCommunities(parent.ids,lens,drillStack.length);
+  const assignment=new Map();
+  drillChildren.forEach(g=>g.ids.forEach(id=>assignment.set(id,g)));
+  const nodes=overviewData.nodes.filter(n=>parent.ids.has(n.id)&&visibleNodes.has(n.kind)).map(n=>{
+    const child=assignment.get(n.id);
+    return {...n,communities:{...n.communities,[lens]:{id:child?.id||parent.id,label:child?.label||parent.label,derived:false}}};
+  });
+  const ids=new Set(nodes.map(n=>n.id));
+  const links=overviewData.links.filter(e=>ids.has(nodeId(e.source))&&ids.has(nodeId(e.target)))
+    .map(e=>({...e,source:nodeId(e.source),target:nodeId(e.target)}));
+  renderGraph(nodes,links,true);
+  const crumb=drillStack.map(g=>safe(g.label)).join(' → ');
+  details.innerHTML=`<div class="cluster-detail"><p class="eyebrow">${safe($('#cluster-lens').selectedOptions[0].text)} · level ${drillStack.length}</p><h1>${safe(parent.label)}</h1>
+    <p>${parent.ids.size.toLocaleString()} members · ${drillChildren.length} internal communities</p>
+    <p class="meta">${crumb}</p><p class="caution">Subclusters are computed from links within this group for the selected network. They are exploratory, not verified categories.</p>
+    ${drillChildren.length?'<p>Select a subcluster at the bottom of the left panel to explore it.</p>':'<p>No further meaningful split was found at this level.</p>'}</div>`;
+  updateLegend();setInspector(true);
 }
 function updateStyle() {
   if(!graph) return;
@@ -301,6 +376,7 @@ function showEdge(l) {
 }
 function renderOverviewSlice() {
   if (!overviewData) return;
+  drillStack=[];drillChildren=[];
   const lens = $('#cluster-lens').value;
   $('#cluster-count-control').hidden = lens === 'none';
   if (lens === 'none') {
@@ -349,6 +425,7 @@ async function openOverview(mode = 'people') {
   } catch(e) { error(e); } finally { $('#loading').hidden = true; }
 }
 async function open(type, id) {
+  drillStack=[];drillChildren=[];
   showGraphView();
   setInspector(true);
   results.hidden = true; $('#loading').hidden = false;
@@ -428,7 +505,17 @@ matchResults.addEventListener('click',e => {
 });
 kind.addEventListener('change', () => search.dispatchEvent(new Event('input')));
 results.addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (b) { search.value = b.textContent; open(kind.value, b.dataset.id); } });
-details.addEventListener('click', e => { const p = e.target.closest('[data-paper]'), b = e.target.closest('[data-open]'); if (p) showPaper(p.dataset.paper); else if (b) open(b.dataset.open,b.dataset.id); });
+details.addEventListener('click', e => {
+  const drill=e.target.closest('[data-drill-start]');
+  if(drill && activeCluster && overviewData){
+    const lens=$('#cluster-lens').value;
+    const members=overviewData.nodes.filter(n=>n.communities?.[lens]?.id===activeCluster);
+    drillStack=[{id:activeCluster,label:members[0]?.communities?.[lens]?.label||'Cluster',ids:new Set(members.map(n=>n.id))}];
+    renderDrill();if(window.innerWidth<=850)setMenu(false);return;
+  }
+  const p=e.target.closest('[data-paper]'), b=e.target.closest('[data-open]');
+  if(p)showPaper(p.dataset.paper);else if(b)open(b.dataset.open,b.dataset.id);
+});
 window.addEventListener('resize', () => { if (graph) graph.width(host.clientWidth).height(host.clientHeight); });
 function setMenu(open) {
   $('#controls').hidden = !open;
@@ -465,6 +552,15 @@ $('#cluster-lens').addEventListener('change',()=>{
 $('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${overviewData ? new Set(overviewData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
 $('#cluster-count').addEventListener('change',()=>{if(overviewMode)renderOverviewSlice()});
 $('#legend').addEventListener('click',e=>{
+  if(drillStack.length){
+    if(e.target.closest('[data-drill-back]')){
+      drillStack.pop();if(drillStack.length)renderDrill();else renderOverviewSlice();
+    }else{
+      const child=e.target.closest('[data-drill-child]');
+      if(child){const g=drillChildren[Number(child.dataset.drillChild)];if(g){drillStack.push({...g,ids:new Set(g.ids)});renderDrill();}}
+    }
+    if(window.innerWidth<=850)setMenu(false);return;
+  }
   const b=e.target.closest('[data-cluster]');if(!b)return;
   if(activeCluster===b.dataset.cluster){
     activeCluster=null;
