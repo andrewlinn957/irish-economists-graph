@@ -52,6 +52,8 @@ The light-mode viewer computes three separate, deterministic weighted label-prop
 
 ## GitHub Pages edition
 
+Public snapshot: https://andrewlinn957.github.io/irish-economists-graph/
+
 `python3 build_pages.py` generates `docs/`, a read-only snapshot of the same graph UI. It preserves the overview, search, focused person/institution/topic/paper views, and Matchmaker results without exposing Neo4j or requiring a public API. The snapshot is not live: rebuild and publish it after a corpus update. The `docs/data/` JSON files contain public bibliographic metadata, including source byline affiliation strings.
 
 ## Useful Cypher
