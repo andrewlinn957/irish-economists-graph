@@ -162,7 +162,12 @@ function applyClusterLayout(reheat = true) {
 }
 const safe = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const approvedUrl = s => /^https:\/\/(doi\.org|openalex\.org|orcid\.org|ror\.org)\//.test(s || '') ? s : null;
-async function get(path) { const r = await fetch(path); if (!r.ok) throw Error('Unable to load graph data'); return r.json(); }
+async function get(path) {
+  if (window.staticGraphGet) return window.staticGraphGet(path);
+  const r = await fetch(path);
+  if (!r.ok) throw Error('Unable to load graph data');
+  return r.json();
+}
 function showGraphView() {
   document.body.classList.remove('matchmaker-mode');
   $('main').classList.remove('matchmaker-mode');

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Irish economists</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./force-graph.js" defer></script>
+  <script src="./pages-adapter.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="brand">Irish economists <span>2012–2026</span></div>
+  <button id="overview" class="topbutton active" aria-pressed="true" title="Show economist network">Graph</button>
+  <button id="matchmaker-tab" class="topbutton" aria-pressed="false" title="Find a potential co-author">Matchmaker</button>
+  <div class="searchbox">
+    <select id="kind" aria-label="Search category"><option value="person">People</option><option value="institution">Institutions</option><option value="topic">Topics</option></select>
+    <input id="search" type="search" placeholder="Search people, institutions or topics" autocomplete="off" aria-label="Search graph">
+  </div>
+  <a class="about" href="https://help.openalex.org/data/authorships/" target="_blank" rel="noopener">Source ↗</a>
+</header>
+<main>
+  <section id="stage">
+    <div id="graph"></div>
+    <button id="menu-toggle" aria-label="Open graph controls" aria-controls="controls" aria-expanded="false" title="Graph controls">☰</button>
+    <button id="inspector-toggle" aria-label="Show selection panel" aria-controls="inspector" aria-expanded="false" title="Show selection panel" hidden>Show selection</button>
+    <div id="menu-scrim" hidden></div>
+    <nav id="controls" aria-label="Graph controls" hidden>
+      <div class="controls-head"><strong>Graph controls</strong><button id="menu-close" aria-label="Close graph controls">×</button></div>
+      <div class="controls-content">
+        <section class="control-section">
+          <h2>Clusters</h2>
+          <label for="cluster-lens">Cluster by</label>
+          <select id="cluster-lens" aria-label="Cluster graph by network"><option value="coauthor">Co-authorship network</option><option value="topic">Topic network</option><option value="institution">Institution network</option></select>
+          <label for="cluster-count">Clusters shown <output id="cluster-count-value" for="cluster-count">8</output></label>
+          <input id="cluster-count" type="range" min="1" max="30" value="8" aria-label="Number of largest clusters shown">
+          <p class="control-hint">Search to inspect people and topics outside the displayed clusters.</p>
+        </section>
+        <section class="control-section">
+          <h2>Nodes</h2>
+          <label><input type="checkbox" data-node-type="person" checked> People</label>
+          <label><input type="checkbox" data-node-type="institution" checked> Institutions</label>
+          <label><input type="checkbox" data-node-type="topic" checked> Topics</label>
+        </section>
+        <section class="control-section">
+          <h2>Labels</h2>
+          <label><input type="checkbox" data-label-type="person" checked> People</label>
+          <label><input type="checkbox" data-label-type="institution" checked> Institutions</label>
+          <label><input type="checkbox" data-label-type="topic" checked> Topics</label>
+        </section>
+        <section class="control-section">
+          <h2>Links</h2>
+          <label><input type="checkbox" data-edge-type="coauthor" checked> Co-authored</label>
+          <label><input type="checkbox" data-edge-type="affiliation" checked> Publication affiliation</label>
+          <label><input type="checkbox" data-edge-type="topic" checked> Author–topic</label>
+          <label><input type="checkbox" data-edge-type="topic_pair" checked> Topic co-occurrence</label>
+          <label><input type="checkbox" data-edge-type="shared" checked> Shared institution-year</label>
+          <label><input id="shared" type="checkbox"> Institution-year links in person view</label>
+        </section>
+        <section class="control-section" id="legend" aria-label="Community legend"><h2 id="cluster-heading">Communities</h2><div id="legend-list"></div></section>
+      </div>
+    </nav>
+    <div id="empty" hidden></div>
+    <div id="loading" hidden>Loading…</div>
+    <div id="results" hidden></div>
+  </section>
+  <section id="matchmaker-view" hidden>
+    <div class="matchmaker-shell">
+      <h1>Find a collaborator</h1>
+      <p>Search for a researcher in the Irish economics corpus.</p>
+      <div class="match-search-wrap">
+        <input id="match-search" type="search" placeholder="Academic name" autocomplete="off" aria-label="Academic name">
+        <div id="match-picks" hidden></div>
+      </div>
+      <div id="match-results" aria-live="polite"></div>
+    </div>
+  </section>
+  <aside id="inspector">
+    <div class="selection-head"><div class="eyebrow">Selection</div><button id="inspector-close" type="button" aria-label="Hide selection panel">Hide selection</button></div>
+    <div id="details"><h1>Irish economics research</h1><p>Select a node or link to inspect its source papers.</p></div>
+  </aside>
+</main>
+</body>
+</html>

@@ -50,6 +50,10 @@ Implementation: `ui/server.py`, `ui/index.html`, `ui/app.js`, and `ui/style.css`
 
 The light-mode viewer computes three separate, deterministic weighted label-propagation partitions from co-authorship, author/topic and affiliation links. These are exploratory communities, not observed affiliations. The left panel controls the lens, cluster count, node/link visibility and label visibility. Institution community circles use abbreviations; person circles use full representative names and topic circles use short readable titles. The right-hand selection inspector is collapsible.
 
+## GitHub Pages edition
+
+`python3 build_pages.py` generates `docs/`, a read-only snapshot of the same graph UI. It preserves the overview, search, focused person/institution/topic/paper views, and Matchmaker results without exposing Neo4j or requiring a public API. The snapshot is not live: rebuild and publish it after a corpus update. The `docs/data/` JSON files contain public bibliographic metadata, including source byline affiliation strings.
+
 ## Useful Cypher
 
 ```cypher

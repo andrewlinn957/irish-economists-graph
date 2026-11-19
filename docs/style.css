@@ -1,0 +1,74 @@
+:root{font-family:Inter,ui-sans-serif,system-ui,Arial,sans-serif;color:#23322b;background:#f7f8f5}*{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button{cursor:pointer}[hidden]{display:none!important}
+header{min-height:64px;display:flex;align-items:center;gap:12px;padding:9px 18px;border-bottom:1px solid #d4ded6;background:#fff}.brand{font-size:18px;font-weight:700;white-space:nowrap;letter-spacing:-.025em;margin-right:8px}.brand span{display:block;color:#71867a;font-size:10px;font-weight:500;letter-spacing:.06em}.topbutton{background:#f9fbf8;color:#355646;border:1px solid #c7d8ca;border-radius:5px;padding:8px 11px}.topbutton:hover{background:#e8f2e9}.searchbox{display:flex;max-width:520px;min-width:180px;flex:1;border:1px solid #b9cdbd;background:#fff;border-radius:6px;overflow:hidden}.searchbox:focus-within{border-color:#437e61}.searchbox select,.searchbox input{border:0;background:transparent;color:#263b2f;padding:10px;outline:none}.searchbox select{width:120px;border-right:1px solid #d5e0d7}.searchbox input{width:100%;min-width:0}.searchbox input::placeholder{color:#87998b}.about{margin-left:auto;color:#416d56;text-decoration:none;font-size:12px;white-space:nowrap}
+main{display:grid;grid-template-columns:minmax(0,1fr) 370px;height:calc(100dvh - 64px)}#stage{position:relative;min-width:0;background:#f7f8f5}#graph{width:100%;height:100%}.toolbar{position:absolute;right:12px;top:12px;z-index:4;color:#546b59;font-size:12px}.toolbar details{position:relative}.toolbar summary{list-style:none;width:30px;height:30px;display:grid;place-items:center;border:1px solid #d1dbd2;border-radius:50%;background:#fffffff0;color:#60776a;box-shadow:0 2px 8px #20302212;cursor:pointer;font-size:16px}.toolbar summary::-webkit-details-marker{display:none}.layer-panel{position:absolute;right:0;top:36px;width:240px;padding:12px;background:#fff;border:1px solid #c5d3c7;border-radius:6px;box-shadow:0 10px 25px #22332930;display:grid;gap:7px;color:#263a2e}.layer-panel select{width:100%;border:1px solid #c5d3c7;border-radius:4px;background:#fff;color:#263a2e;padding:6px}.panel-title{font-size:12px;font-weight:700}.layer-panel strong{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b8271;margin-top:4px}.layer-panel label{display:block;cursor:pointer}.layer-panel input{accent-color:#397b58;vertical-align:middle}.layer-panel hr{width:100%;border:0;border-top:1px solid #d9e2da}
+#empty,#loading{position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);color:#697f71;text-align:center;font-size:14px}#results{position:absolute;top:70px;left:50%;transform:translateX(-50%);width:min(520px,calc(100% - 32px));background:#fff;border:1px solid #bacdbd;max-height:55vh;overflow:auto;z-index:3;box-shadow:0 14px 36px #26382935;border-radius:7px}#results button{display:block;width:100%;padding:10px 13px;border:0;border-bottom:1px solid #e1e8e1;background:transparent;color:#23382a;text-align:left}#results button:hover{background:#eff5ef}#results p{padding:0 13px}
+#legend{position:absolute;left:16px;bottom:16px;z-index:2;max-width:min(310px,55vw);max-height:34vh;overflow:auto;background:#fffffff2;border:1px solid #d1dbd2;border-radius:7px;box-shadow:0 2px 12px #20302212;padding:8px 10px;font-size:11px}#legend summary{cursor:pointer;color:#60766a;font-weight:700}#legend-list{padding-top:6px}#legend button{display:flex;align-items:center;gap:7px;width:100%;border:0;background:none;text-align:left;padding:4px 2px;color:#334a3b;font-size:11px}#legend button:hover,#legend button.active{background:#eaf3e9}.swatch{flex:none;width:11px;height:11px;border-radius:50%;border:1px solid #0002}.legend-count{margin-left:auto;color:#819287}
+aside{border-left:1px solid #d4ded6;background:#fff;overflow:auto;padding:22px}.eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:#65836f;margin-bottom:12px}h1{font-size:23px;line-height:1.18;margin:0 0 14px;letter-spacing:-.03em}h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:#637c69;margin:24px 0 8px}p{font-size:13px;line-height:1.5;color:#52685a}.caution{font-size:11px;color:#718779}.item{display:block;width:100%;background:none;border:0;border-bottom:1px solid #e1e9e1;padding:10px 2px;text-align:left;color:#263e2e;font-size:13px}.item:hover{color:#277648}.meta{display:block;color:#7a9080;font-size:11px;margin-top:3px}.link{color:#286c46;text-decoration:none;overflow-wrap:anywhere}.edge{border-left:3px solid #c48632;padding-left:12px}.error{color:#9c473a}
+@media(max-width:850px){header{flex-wrap:wrap;gap:7px;padding:9px}.brand{font-size:16px}.brand span{display:inline;margin-left:5px}.searchbox{order:3;flex-basis:100%;max-width:none}.about{font-size:11px}main{display:flex;flex-direction:column;height:calc(100dvh - 108px)}#stage{height:53%;min-height:260px}aside{height:47%;border-left:0;border-top:1px solid #d4ded6;padding:14px}.toolbar{right:8px;top:8px}#legend{left:8px;bottom:8px;max-height:25vh}}
+
+/* One left-hand control surface; the graph remains the primary screen. */
+#menu-toggle{position:absolute;left:12px;top:12px;z-index:5;width:42px;height:42px;border:1px solid #cbd7cd;border-radius:6px;background:#fffffff2;color:#365a45;box-shadow:0 2px 8px #20302218;font-size:20px;line-height:1}
+#menu-toggle:hover,#menu-toggle:focus-visible{background:#eef4ee}
+#inspector-toggle{position:absolute;right:12px;top:12px;z-index:5;border:1px solid #cbd7cd;border-radius:6px;background:#fffffff2;color:#365a45;box-shadow:0 2px 8px #20302218;font-size:13px;padding:10px 12px}
+#inspector-toggle:hover,#inspector-toggle:focus-visible{background:#eef4ee}
+.selection-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.selection-head .eyebrow{margin:0}.selection-head button{border:1px solid #cbd7cd;border-radius:5px;background:#f9fbf8;color:#365a45;padding:7px 9px;font-size:12px}.selection-head button:hover,.selection-head button:focus-visible{background:#eef4ee}
+main.inspector-minimised{grid-template-columns:minmax(0,1fr)}
+#menu-scrim{display:none}
+#controls{position:absolute;left:0;top:0;bottom:0;z-index:6;width:min(310px,calc(100% - 60px));background:#fff;border-right:1px solid #d4ded6;box-shadow:8px 0 25px #2030221c;display:flex;flex-direction:column}
+.controls-head{display:flex;align-items:center;justify-content:space-between;min-height:56px;padding:8px 14px;border-bottom:1px solid #e0e8e1;color:#263d2e;font-size:14px}
+#menu-close{width:38px;height:38px;border:0;background:transparent;color:#526d59;font-size:25px;line-height:1}
+.controls-content{overflow:auto;overscroll-behavior:contain;padding:4px 14px 18px}
+.control-section{padding:12px 0;border-bottom:1px solid #e3eae3}
+.control-section h2{margin:0 0 10px;font-size:11px;color:#5a7664}
+.control-section label{display:flex;align-items:center;gap:9px;min-height:38px;font-size:13px;color:#304936;cursor:pointer}
+.control-section input[type=checkbox]{width:17px;height:17px;flex:none;accent-color:#397b58}
+#cluster-lens{width:100%;min-height:42px;padding:7px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e}
+#cluster-count{width:100%;accent-color:#397b58;cursor:pointer}#cluster-count-value{margin-left:auto;font-weight:700;color:#28583c}.control-hint{margin:3px 0 0;font-size:11px;color:#6e8173}
+#legend{position:static;max-width:none;max-height:none;overflow:visible;background:transparent;border:0;border-radius:0;box-shadow:none;padding:12px 0}
+#legend-list{max-height:230px;overflow:auto}
+#legend-list button{min-height:31px}
+@media(max-width:850px){
+  #menu-toggle{left:8px;top:8px;width:44px;height:44px}
+  #inspector-toggle{right:8px;top:8px;min-height:44px}
+  main.inspector-minimised #stage{height:100%;flex:1;min-height:0}
+  #menu-scrim:not([hidden]){display:block;position:fixed;inset:0;z-index:8;background:#17261c66}
+  #controls{position:fixed;inset:0 auto 0 0;z-index:9;width:min(340px,88vw);max-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+  .controls-head{padding-top:max(8px,env(safe-area-inset-top))}
+  .control-section label{min-height:44px}
+  #legend-list{max-height:none}
+}
+
+/* Matchmaker is a second working view, not another graph-control menu. */
+.topbutton.active{background:#e8f2e9;border-color:#7fa98b;color:#205236}
+main.matchmaker-mode{display:block;height:calc(100dvh - 64px);overflow:auto;background:#f7f8f5}
+main.matchmaker-mode #stage,main.matchmaker-mode #inspector{display:none!important}
+body.matchmaker-mode .searchbox{visibility:hidden}
+#matchmaker-view{min-height:100%;padding:42px 20px 60px}
+.matchmaker-shell{max-width:780px;margin:0 auto}
+.matchmaker-shell>h1{font-size:28px;margin-bottom:4px}
+.matchmaker-shell>p{margin:0 0 24px}
+.match-search-wrap{position:relative;max-width:520px}
+#match-search{width:100%;min-height:48px;padding:11px 14px;border:1px solid #b9cdbd;border-radius:6px;background:#fff;outline:none}
+#match-search:focus{border-color:#437e61}
+#match-picks{position:absolute;z-index:10;top:52px;width:100%;max-height:300px;overflow:auto;background:#fff;border:1px solid #bacdbd;border-radius:6px;box-shadow:0 14px 36px #26382925}
+#match-picks button{display:block;width:100%;border:0;border-bottom:1px solid #e1e8e1;background:#fff;padding:10px 13px;text-align:left;color:#23382a}
+#match-picks button:hover{background:#eff5ef}
+#match-picks span{display:block;color:#7a9080;font-size:11px;margin-top:3px}
+#match-picks p{padding:0 13px}
+#match-results{margin-top:30px}
+#match-results>h2{font-size:17px;text-transform:none;letter-spacing:0;color:#23382a;margin:0 0 5px}
+.match-scope{font-size:11px;margin:0 0 18px}
+.match-list{display:grid;gap:10px}
+.match-card{display:grid;grid-template-columns:30px 1fr;gap:12px;background:#fff;border:1px solid #d8e2d9;border-radius:7px;padding:16px}
+.match-rank{font-size:13px;color:#829486;padding-top:2px}
+.match-card h3{font-size:16px;margin:0 0 5px;color:#263d2e}
+.match-card p{margin:0 0 7px}
+.match-card .match-topics{color:#647d69}
+.match-card button{border:0;background:none;color:#286c46;font-size:12px;font-weight:600;padding:0}
+@media(max-width:850px){
+  main.matchmaker-mode{height:calc(100dvh - 108px)}
+  body.matchmaker-mode .searchbox{display:none}
+  #matchmaker-view{padding:22px 14px 45px}
+  .matchmaker-shell>h1{font-size:24px}
+  .match-card{padding:13px;grid-template-columns:22px 1fr}
+}
