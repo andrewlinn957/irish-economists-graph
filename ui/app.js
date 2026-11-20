@@ -69,6 +69,7 @@ function clusterColour(n) {
 }
 function clusterAbbreviation(label) {
   const words = String(label || '').split(/[^\p{L}\p{N}]+/u).filter(word => word && !/^(and|of|the|in|on|for|at|with)$/i.test(word));
+  if (words.length === 1 && words[0].length <= 14) return words[0];
   return words.slice(0, 5).map(word => word[0].toUpperCase()).join('') || '?';
 }
 function shortTopicTitle(title) {
@@ -162,7 +163,8 @@ function edgeColour(l) {
     const lens=activeLens;
     const same=a && b && clusterOf(a)===clusterOf(b);
     const inLens=(lens==='coauthor' && l.type==='coauthor') || (lens==='topic' && (l.type==='topic' || l.type==='topic_pair')) || (lens==='institution' && l.type==='affiliation');
-    return inLens ? same ? '#769b8160' : '#8ca99b1c' : '#9daeba0b';
+    if (inLens && !same && activeCluster && (clusterOf(a)===activeCluster || clusterOf(b)===activeCluster)) return '#365c4fc0';
+    return inLens ? same ? '#769b8150' : '#526f628a' : '#9daeba0b';
   }
   return l.type==='topic_pair'||l.type==='topic'?'#b3c3d9':l.type==='shared'?'#c6b5cd':'#bdcfc0';
 }
@@ -382,11 +384,13 @@ function renderGraph(nodes, links, overview = false) {
   if (graph?._destructor) graph._destructor();
   graph = null; host.innerHTML = ''; selectedEdge = null; overviewMode = overview;
   currentNodes=nodes; currentLinks=links; currentNodeMap=new Map(nodes.map(n=>[n.id,n])); activeCluster=null; clusterDetailsBackup=null;
+  const seeded = overview && nodes.length > 0 && nodes.every(n => Array.isArray(n.layouts?.[activeLens]));
+  if (seeded) for (const n of nodes) [n.x, n.y] = n.layouts[activeLens];
   const degrees = new Map(nodes.map(n => [n.id, 0]));
   for (const l of links) { degrees.set(l.source, (degrees.get(l.source) || 0) + 1); degrees.set(l.target, (degrees.get(l.target) || 0) + 1); }
   prominent = new Set([...degrees].sort((a,b) => b[1] - a[1]).slice(0, 20).map(x => x[0]));
   graph = window.FoamGraph()(host).width(host.clientWidth).height(host.clientHeight)
-    .cooldownTime(overview ? activeLens === 'none' ? 3000 : nodes.length > 12000 ? 8000 : 12000 : 15000)
+    .cooldownTime(seeded ? 1200 : overview ? activeLens === 'none' ? 3000 : nodes.length > 12000 ? 8000 : 12000 : 15000)
     .graphData({nodes,links}).nodeId('id').backgroundColor('#f7f8f5').nodeRelSize(6)
     .onRenderFramePre(drawClusterAreas)
     .onRenderFramePost(drawClusterLabels)
@@ -404,14 +408,14 @@ function renderGraph(nodes, links, overview = false) {
     })
     .linkColor(edgeColour)
     .linkLineDash(l => l.type === 'shared' ? [5,3] : [])
-    .linkWidth(l => selectedEdge === l ? 5 : overviewMode ? Math.max(0.5, Math.min(1.4, Math.sqrt(l.weight || 1) * 0.6)) : Math.max(1, Math.min(2.5, Math.sqrt(l.weight || 1))))
+    .linkWidth(l => selectedEdge === l ? 5 : overviewMode ? Math.max(0.5, Math.min(activeLens !== 'none' && clusterOf(endNode(l.source)) !== clusterOf(endNode(l.target)) ? 2.0 : 1.4, Math.sqrt(l.weight || 1) * 0.6)) : Math.max(1, Math.min(2.5, Math.sqrt(l.weight || 1))))
     .onNodeClick(n => open(n.kind, n.id)).onLinkClick(l => {
       selectedEdge = l; graph.linkColor(graph.linkColor()); graph.linkWidth(graph.linkWidth()); showEdge(l);
     }).onEngineStop(() => graph.zoomToFit(350, 45));
   applyClusterLayout();
   updateLegend();
   const rendered = graph;
-  fitTimer = setTimeout(() => { if (graph === rendered && overviewMode) graph.zoomToFit(650, 90); }, 2500);
+  fitTimer = setTimeout(() => { if (graph === rendered && overviewMode) graph.zoomToFit(seeded ? 250 : 650, 90); }, seeded ? 100 : 2500);
 }
 function showEdge(l) {
   setInspector(true);

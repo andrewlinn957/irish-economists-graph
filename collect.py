@@ -275,6 +275,18 @@ def person_name_key(name):
     return words[0], words[-1]
 
 
+def institution_graph_label(name, country_code, city):
+    """Short display label only when the university's name is its city."""
+    prefix = 'University of '
+    if not name.startswith(prefix) or country_code not in {'GB', 'IE'}:
+        return name
+    suffix = name[len(prefix):]
+    irish_cities = {'Dublin', 'Galway', 'Limerick', 'Cork', 'Belfast'}
+    if (city and suffix.casefold() == city.strip().casefold()) or (country_code == 'IE' and suffix in irish_cities):
+        return suffix
+    return name
+
+
 def middle_names_compatible(a, b):
     def middle(name):
         plain = ''.join(c for c in unicodedata.normalize('NFKD', name.casefold())
@@ -291,9 +303,11 @@ def resolve_person_identities(people, authorships, affiliations):
     papers_by_person = defaultdict(set)
     institutions_by_person = defaultdict(set)
     email_by_person = defaultdict(set)
+    byline_names = defaultdict(set)
     for row in authorships:
         by_paper[row['paper_id']].append(row['person_id'])
         papers_by_person[row['person_id']].add(row['paper_id'])
+        byline_names[row['person_id']].add(row['raw_name'].strip().casefold())
     for row in affiliations:
         pid = row['person_id']
         institutions_by_person[pid].add(row['institution_id'])
@@ -372,14 +386,41 @@ def resolve_person_identities(people, authorships, affiliations):
                     (not people[pid]['orcid'] or people[pid]['orcid'] == people[anchor]['orcid'])):
                 merge(anchor, pid, 'unique ORCID-bearing OpenAlex identity with matching name and publication institution')
 
+    # An OpenAlex display name may be an initial even when its paper bylines
+    # spell out the full name. Link an unresolved full-name byline only when
+    # publication institution AND a named coauthor also agree, and the
+    # full-name alias identifies exactly one resolved candidate.
+    aliases = defaultdict(set)
+    for pid, person in people.items():
+        if person['openalex_id']:
+            for name in byline_names[pid]:
+                if len(re.findall(r'[a-z]+', name)) >= 2:
+                    aliases[name].add(pid)
+    for pid, person in people.items():
+        if not pid.startswith('unresolved:'):
+            continue
+        candidates = [other for other in aliases[person['name'].strip().casefold()]
+                      if institutions_by_person[pid] & institutions_by_person[other]
+                      and coauthors_by_person[pid] & coauthors_by_person[other]
+                      and not papers_by_person[pid] & papers_by_person[other]]
+        roots = {root(other) for other in candidates}
+        if len(roots) == 1:
+            merge(pid, next(iter(roots)), 'full-name byline alias, shared publication institution and coauthor')
+
     override_groups = json.loads((ROOT / 'identity-overrides.json').read_text())['groups']
     explicit = {}
     for group in override_groups:
         present = [pid for pid in group['source_ids'] if pid in people]
         if not present:
             continue
-        if len({person_name_key(people[pid]['name']) for pid in present}) != 1:
-            raise ValueError(f"Override has incompatible names: {group['canonical_id']}")
+        name_keys = {person_name_key(people[pid]['name']) for pid in present}
+        if len(name_keys) != 1:
+            preferred = group['preferred_name'].strip().casefold()
+            if not all(preferred in byline_names[pid] for pid in present):
+                raise ValueError(f"Override has incompatible names without matching full bylines: {group['canonical_id']}")
+            shared_institutions = set.intersection(*(institutions_by_person[pid] for pid in present))
+            if not shared_institutions:
+                raise ValueError(f"Override lacks a shared publication institution: {group['canonical_id']}")
         if len(set(present)) != len(present):
             raise ValueError(f"Override repeats a source ID: {group['canonical_id']}")
         paper_sets = [papers_by_person[pid] for pid in present]
@@ -510,6 +551,9 @@ def build():
                         "Ireland" if country_code == "IE" else "Other")
                     institutions[iid] = {"institution_id": iid,
                                          "name": inst.get("display_name") or INSTITUTIONS.get(iid, ""),
+                                         "graph_label": institution_graph_label(
+                                             inst.get("display_name") or INSTITUTIONS.get(iid, ""),
+                                             country_code, geo.get("city") or ""),
                                          "ror": inst.get("ror") or "",
                                          "country_code": country_code,
                                          "country": country,
@@ -600,7 +644,7 @@ def build():
         item(n, "countries", "|".join(sorted(person_countries[pid])))
     for iid in sorted(target_ids & set(institutions)):
         n = ET.SubElement(graph, f"{{{ns}}}node", id="institution:" + iid)
-        item(n, "label", institutions[iid]["name"])
+        item(n, "label", institutions[iid]["graph_label"])
         item(n, "kind", "institution")
         item(n, "country", institutions[iid]["country"])
     for row in co_rows:

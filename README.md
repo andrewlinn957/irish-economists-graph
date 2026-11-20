@@ -51,6 +51,8 @@ Implementation: `ui/server.py`, `ui/index.html`, `ui/app.js`, and `ui/style.css`
 
 The light-mode viewer computes three separate, deterministic weighted label-propagation partitions from co-authorship, author/topic and affiliation links. These are exploratory communities, not observed affiliations. The left panel controls the lens, cluster count, node/link visibility and label visibility. Institution community circles use abbreviations; person circles use full representative names and topic circles use short readable titles. The right-hand selection inspector is collapsible.
 
+The fixed country overviews carry precomputed first-frame coordinates for the unclustered and three clustered lenses. The browser paints those positions immediately, then briefly refines the layout. Institution-filtered and focused graphs remain dynamic. The positions are a view cache, not Neo4j records or additional clustering evidence; rebuild the snapshots after a corpus change.
+
 ## GitHub Pages edition
 
 Public snapshot: https://andrewlinn957.github.io/uk-ireland-economists-graph/

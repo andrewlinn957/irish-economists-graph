@@ -1,6 +1,15 @@
 {
   "groups": [
     {
+      "canonical_id": "A5027700002",
+      "preferred_name": "Amar Radia",
+      "reason": "The OpenAlex A5027700002 record itself has multiple Amar Radia bylines at the Bank of England; the unresolved Amar Radia byline is also Bank of England affiliated. This is a reviewed identity match, not an initials-only rule.",
+      "source_ids": [
+        "A5027700002",
+        "unresolved:W2138130665:1"
+      ]
+    },
+    {
       "canonical_id": "orcid:0000-0002-6847-4726",
       "preferred_name": "Robert Kelly",
       "reason": "Reviewed Central Bank of Ireland mortgage and monetary-policy papers; overlapping named co-authors and one source byline ORCID. The user identified these Robert Kelly records as one person.",

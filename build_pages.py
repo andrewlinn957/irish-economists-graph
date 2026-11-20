@@ -9,6 +9,7 @@ import shutil
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+from precompute_layouts import add_layouts
 
 ROOT = Path(__file__).resolve().parent
 OUT = Path(os.environ.get('ECON_GRAPH_OUTPUT', ROOT / 'output'))
@@ -82,7 +83,7 @@ def main():
     topics = {r['topic_id']: r for r in topic_rows}
     graph = overview()
     for country in ('island', 'Ireland', 'Northern Ireland', 'England', 'Scotland', 'Wales', 'uk', 'all'):
-        country_graph = country_overview(country)
+        country_graph = add_layouts(country_overview(country))
         write(DATA / f'overview-{country}.json', country_graph)
         write(DATA / f'overview-{country}-people.json', people_view(country_graph))
     write(DATA / 'topic-overview.json', topic_overview())

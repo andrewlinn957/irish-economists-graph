@@ -61,6 +61,26 @@ def main():
         subprocess.run(['docker', 'cp', str(output / f'{name}.csv'),
                         f'{CONTAINER}:{IMPORT_DIR}/{name}.csv'], check=True)
     print('Staged CSV counts:', expected, flush=True)
+    relations = {
+        'IRISH_AUTHORED': 'authorships',
+        'IRISH_AFFILIATED_ON_PAPER': 'paper_affiliations',
+        'IRISH_COAUTHORED': 'coauthored',
+        'IRISH_SHARED_INSTITUTION_YEAR': 'shared_institution_year',
+        'IRISH_HAS_TOPIC': 'paper_topics',
+        'IRISH_TOPIC_COOCCURS': 'topic_cooccurs',
+    }
+    # Delete bounded relationship batches before nodes. A high-degree author
+    # can otherwise make even a 500-node DETACH DELETE exceed Neo4j's
+    # transaction memory pool on this VPS.
+    for relation in relations:
+        relation = relation.replace('IRISH_', f'{args.namespace.upper()}_')
+        removed = 0
+        while True:
+            count = query(f'MATCH ()-[r:{relation}]->() WITH r LIMIT 2000 DELETE r RETURN count(*) AS count', auth)[0]['count']
+            removed += count
+            if count < 2000:
+                break
+        print(f'Cleared {relation}: {removed} relationships', flush=True)
     for label in labels:
         before = query(f'MATCH (n:{label}) RETURN count(n) AS count', auth)[0]['count']
         print(f'Replacing {label}: {before} existing', flush=True)
@@ -80,14 +100,6 @@ def main():
         actual = query(f'MATCH (n:{label}) RETURN count(n) AS count', auth)[0]['count']
         if actual != expected[source]:
             raise RuntimeError(f'{label}: expected {expected[source]}, got {actual}')
-    relations = {
-        'IRISH_AUTHORED': 'authorships',
-        'IRISH_AFFILIATED_ON_PAPER': 'paper_affiliations',
-        'IRISH_COAUTHORED': 'coauthored',
-        'IRISH_SHARED_INSTITUTION_YEAR': 'shared_institution_year',
-        'IRISH_HAS_TOPIC': 'paper_topics',
-        'IRISH_TOPIC_COOCCURS': 'topic_cooccurs',
-    }
     for rel, source in relations.items():
         if args.namespace == 'UKIE':
             rel = rel.replace('IRISH_', 'UKIE_')

@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / 'ui'))
 import server
+from precompute_layouts import add_layouts
 
 DATA = ROOT / 'docs' / 'data'
 
@@ -26,7 +27,7 @@ def main():
     DATA.mkdir(parents=True, exist_ok=True)
     server.overview()
     for country in ('island', 'Ireland', 'Northern Ireland', 'England', 'Scotland', 'Wales', 'uk', 'all'):
-        graph = server.country_overview(country)
+        graph = add_layouts(server.country_overview(country))
         write(DATA / f'overview-{country}.json.gz', graph)
         write(DATA / f'overview-{country}-people.json.gz', server.people_view(graph))
         print(f'{country}: {len(graph["nodes"])} nodes, {len(graph["links"])} links', flush=True)
