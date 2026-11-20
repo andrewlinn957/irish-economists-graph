@@ -53,6 +53,8 @@ The light-mode viewer computes three separate, deterministic weighted label-prop
 
 The fixed country overviews carry precomputed first-frame coordinates for the unclustered and three clustered lenses. The browser paints those positions immediately, then briefly refines the layout. Institution-filtered and focused graphs remain dynamic. The positions are a view cache, not Neo4j records or additional clustering evidence; rebuild the snapshots after a corpus change.
 
+The Research gaps tab is a topic-path explorer. `build_topic_paths.py` derives a compact snapshot from `paper_topics.csv` and `topic_cooccurs.csv`, including distinct-paper counts for each topic and pair. The private viewer serves the same snapshot read-only; the Pages edition loads it locally. For two selected topics, breadth-first traversal finds a fewest-link route, breaking ties in favour of more shared-paper support. For three to eight topics, a spanning selection of pairwise shortest routes connects the chosen topics where possible. The UI shows paper counts at every topic and bridge, supporting paper IDs and the thinnest bridge on each route. This is an exploratory indication of where to inspect the literature, not a verified research gap. A disconnected pair can reflect the corpus boundary or OpenAlex topic assignments. Rebuild the topic snapshot after changing the corpus.
+
 ## GitHub Pages edition
 
 Public snapshot: https://andrewlinn957.github.io/uk-ireland-economists-graph/

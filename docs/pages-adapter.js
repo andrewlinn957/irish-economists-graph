@@ -70,6 +70,7 @@
       return data(`overview-${country}${suffix}.json`);
     }
     if (kind === 'topic-overview') return data('topic-overview.json');
+    if (kind === 'topic-path-data') return data('topic-path.json');
     if (kind === 'search') {
       const catalogue = await data('catalogue.json');
       return matches(catalogue[url.searchParams.get('kind') || 'person'] || [], url.searchParams.get('q') || '', 30);
