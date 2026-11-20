@@ -10,6 +10,7 @@ let visibleEdges = new Set(['coauthor','affiliation','topic','topic_pair','share
 let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewClusters = new Map(), activeCluster = null, featuredClusters = new Set();
 let overviewData = null, overviewDataView = null, scopeData = null, scopeKey = null, overviewMode = false, clusterDetailsBackup = null;
 let overviewRequest = 0;
+let focusRequest = 0, lastFocusKey = '', lastFocusAt = 0;
 let drillStack = [], drillChildren = [];
 const selectedInstitutions = new Set();
 const lensEdges = {coauthor:new Set(['coauthor']), topic:new Set(['topic','topic_pair']), institution:new Set(['affiliation'])};
@@ -396,7 +397,7 @@ function renderGraph(nodes, links, overview = false) {
   for (const l of links) { degrees.set(l.source, (degrees.get(l.source) || 0) + 1); degrees.set(l.target, (degrees.get(l.target) || 0) + 1); }
   prominent = new Set([...degrees].sort((a,b) => b[1] - a[1]).slice(0, 20).map(x => x[0]));
   graph = window.FoamGraph()(host).width(host.clientWidth).height(host.clientHeight)
-    .cooldownTime(seeded ? 1200 : overview ? activeLens === 'none' ? 3000 : nodes.length > 12000 ? 8000 : 12000 : 15000)
+    .cooldownTime(seeded ? 1200 : overview ? activeLens === 'none' ? 3000 : nodes.length > 12000 ? 8000 : 12000 : 2000)
     .graphData({nodes,links}).nodeId('id').backgroundColor('#f7f8f5').nodeRelSize(6)
     .onRenderFramePre(drawClusterAreas)
     .onRenderFramePost(drawClusterLabels)
@@ -417,11 +418,11 @@ function renderGraph(nodes, links, overview = false) {
     .linkWidth(l => selectedEdge === l ? 5 : overviewMode ? Math.max(0.5, Math.min(activeLens !== 'none' && clusterOf(endNode(l.source)) !== clusterOf(endNode(l.target)) ? 2.0 : 1.4, Math.sqrt(l.weight || 1) * 0.6)) : Math.max(1, Math.min(2.5, Math.sqrt(l.weight || 1))))
     .onNodeClick(n => open(n.kind, n.id)).onLinkClick(l => {
       selectedEdge = l; graph.linkColor(graph.linkColor()); graph.linkWidth(graph.linkWidth()); showEdge(l);
-    }).onEngineStop(() => graph.zoomToFit(350, 45));
+    }).onEngineStop(() => { if (graph === rendered) graph.zoomToFit(350, 45); });
   applyClusterLayout();
   updateLegend();
   const rendered = graph;
-  fitTimer = setTimeout(() => { if (graph === rendered && overviewMode) graph.zoomToFit(seeded ? 250 : 650, 90); }, seeded ? 100 : 2500);
+  fitTimer = setTimeout(() => { if (graph === rendered) graph.zoomToFit(overview ? seeded ? 250 : 650 : 250, overview ? 90 : 45); }, overview ? seeded ? 100 : 2500 : 300);
 }
 function showEdge(l) {
   setInspector(true);
@@ -473,6 +474,8 @@ function renderOverviewSlice() {
 }
 async function openOverview(mode = 'people') {
   const request = ++overviewRequest;
+  ++focusRequest;
+  lastFocusKey = '';
   showGraphView();
   results.hidden = true; $('#loading').hidden = false;
   try {
@@ -494,12 +497,18 @@ async function openOverview(mode = 'people') {
   } catch(e) { if (request === overviewRequest) error(e); } finally { if (request === overviewRequest) $('#loading').hidden = true; }
 }
 async function open(type, id) {
+  const key = `${type}:${id}:${type === 'person' && $('#shared').checked ? 'shared' : 'direct'}`;
+  const now = performance.now();
+  if (key === lastFocusKey && now - lastFocusAt < 800) return;
+  lastFocusKey = key; lastFocusAt = now;
+  const request = ++focusRequest;
   drillStack=[];drillChildren=[];
   showGraphView();
   setInspector(true);
   results.hidden = true; $('#loading').hidden = false;
   try {
     const d = await get(`/api/${type}/${encodeURIComponent(id)}${type === 'person' && $('#shared').checked ? '?shared=1' : ''}`);
+    if (request !== focusRequest) return;
     current = {type,id}; let nodes = [], links = [];
     if (type === 'person') {
       nodes = [{id:d.centre.id,label:d.centre.name,kind:'person',...communityFields(d.centre.id)},
@@ -529,7 +538,7 @@ async function open(type, id) {
         ${paperList(d.papers)}<h2>Co-occurring topics</h2>${d.related.map(x => `<button class="item" data-open="topic" data-id="${safe(x.id)}">${safe(x.name)}<span class="meta">${safe(x.weight)} shared papers</span></button>`).join('')}`;
     }
     renderGraph(nodes, links);
-  } catch(e) { error(e); } finally { $('#loading').hidden = true; }
+  } catch(e) { if (request === focusRequest) error(e); } finally { if (request === focusRequest) $('#loading').hidden = true; }
 }
 async function showPaper(id) {
   setInspector(true);

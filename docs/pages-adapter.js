@@ -17,7 +17,12 @@
     }));
     return cache.get(path);
   }
-  function bucket(id) {
+  function bucket(id, kind) {
+    if (kind === 'person') {
+      let hash = 2166136261;
+      for (const char of id) hash = Math.imul(hash ^ char.codePointAt(0), 16777619) >>> 0;
+      return hash % 256;
+    }
     let total = 0;
     for (const char of id) total += char.codePointAt(0);
     return total % 32;
@@ -82,7 +87,7 @@
     const id = decodeURIComponent(parts[2] || '');
     if (!id || !['person', 'institution', 'topic', 'paper', 'matchmaker'].includes(kind)) throw Error('Unknown graph record');
     if (kind === 'matchmaker') return recommend(id);
-    const records = await data(`${kind}/${bucket(id)}.json`);
+    const records = await data(`${kind === 'person' ? 'person-v2' : kind}/${bucket(id, kind)}.json`);
     const record = records[id];
     if (!record) throw Error('Graph record not found');
     if (kind === 'person' && url.searchParams.get('shared') !== '1') return {...record, shared: []};

@@ -41,18 +41,27 @@ def bucket(key):
     return sum(map(ord, key)) % 32
 
 
+def person_bucket(key):
+    value = 2166136261
+    for char in key:
+        value = ((value ^ ord(char)) * 16777619) & 0xffffffff
+    return value % 256
+
+
 class Shards:
     def __init__(self, kind):
-        directory = DATA / kind
+        self.person = kind == 'person'
+        directory = DATA / ('person-v2' if self.person else kind)
         directory.mkdir(parents=True, exist_ok=True)
-        self.files = [gzip.open(directory / f'{n}.json.gz', 'wb', compresslevel=6) for n in range(32)]
-        self.first = [True] * 32
+        count = 256 if self.person else 32
+        self.files = [gzip.open(directory / f'{n}.json.gz', 'wb', compresslevel=6) for n in range(count)]
+        self.first = [True] * count
         self.count = 0
         for file in self.files:
             file.write(b'{')
 
     def add(self, key, value):
-        n = bucket(key)
+        n = person_bucket(key) if self.person else bucket(key)
         file = self.files[n]
         if not self.first[n]:
             file.write(b',')
