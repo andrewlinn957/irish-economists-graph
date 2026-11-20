@@ -23,8 +23,20 @@ main.inspector-minimised{grid-template-columns:minmax(0,1fr)}
 .control-section label{display:flex;align-items:center;gap:9px;min-height:38px;font-size:13px;color:#304936;cursor:pointer}
 .control-section input[type=checkbox]{width:17px;height:17px;flex:none;accent-color:#397b58}
 #cluster-lens{width:100%;min-height:42px;padding:7px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e}
-#country-filter,#institution-filter,#institution-search{width:100%;min-height:42px;padding:7px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e}
+#country-filter,#institution-search{width:100%;min-height:42px;padding:7px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e}
 #institution-search{margin:0 0 7px}
+.institution-picker{position:relative}
+.institution-picker summary{min-height:42px;padding:10px 32px 9px 10px;border:1px solid #c5d3c7;border-radius:5px;background:#fff;color:#263a2e;cursor:pointer;font-size:13px;list-style:none;position:relative}
+.institution-picker summary::-webkit-details-marker{display:none}
+.institution-picker summary::after{content:'⌄';position:absolute;right:12px;top:7px;font-size:19px;color:#60776a}
+.institution-picker[open] summary{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.institution-picker-body{border:1px solid #c5d3c7;border-top:0;border-radius:0 0 5px 5px;background:#fff;padding:6px}
+#institution-clear{display:block;width:100%;min-height:38px;border:0;background:#f1f6f0;color:#2d6745;text-align:left;padding:7px 9px;font-size:12px}
+#institution-filter{max-height:240px;overflow:auto;overscroll-behavior:contain}
+.control-section .institution-option{display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:7px 8px;cursor:pointer;font-size:12px;line-height:1.4}
+.institution-option:hover{background:#eff5ef}
+.institution-option input{margin:1px 0 0}
+.institution-option span{overflow-wrap:anywhere}
 #cluster-count{width:100%;accent-color:#397b58;cursor:pointer}#cluster-count-value{margin-left:auto;font-weight:700;color:#28583c}.control-hint{margin:3px 0 0;font-size:11px;color:#6e8173}
 #legend{position:static;max-width:none;max-height:none;overflow:visible;background:transparent;border:0;border-radius:0;box-shadow:none;padding:12px 0}
 #legend-list{max-height:230px;overflow:auto}

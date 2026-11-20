@@ -39,7 +39,13 @@
           </select>
           <label for="institution-search">Find institution by name</label>
           <input id="institution-search" type="search" placeholder="Filter institution names" autocomplete="off">
-          <select id="institution-filter" aria-label="Select institution"><option value="">All institutions in selected country</option></select>
+          <details id="institution-picker" class="institution-picker">
+            <summary id="institution-summary">All institutions in selected country</summary>
+            <div class="institution-picker-body">
+              <button type="button" id="institution-clear">Clear selection</button>
+              <div id="institution-filter" role="group" aria-label="Select institutions"></div>
+            </div>
+          </details>
           <p id="institution-count" class="control-hint"></p>
         </section>
         <section class="control-section">

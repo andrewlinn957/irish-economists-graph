@@ -11,6 +11,7 @@ let currentNodes = [], currentLinks = [], currentNodeMap = new Map(), overviewCl
 let overviewData = null, overviewDataView = null, scopeData = null, scopeKey = null, overviewMode = false, clusterDetailsBackup = null;
 let overviewRequest = 0;
 let drillStack = [], drillChildren = [];
+const selectedInstitutions = new Set();
 const lensEdges = {coauthor:new Set(['coauthor']), topic:new Set(['topic','topic_pair']), institution:new Set(['affiliation'])};
 const palette = ['#2e7d5b','#be6a42','#5c76b7','#9a669f','#a88727','#408d9b','#8c694d','#6b8d40','#b45271','#4b7691','#9067b0','#b2784d','#418078','#967a35','#6576a1','#907c69'];
 function nodeId(n) { return typeof n === 'object' ? n.id : n; }
@@ -25,25 +26,28 @@ function countryMatches(country, choice=$('#country-filter').value) {
 }
 function refreshInstitutions() {
   if(!overviewData)return;
-  const selected=$('#institution-filter').value, term=$('#institution-search').value.trim().toLocaleLowerCase();
+  const term=$('#institution-search').value.trim().toLocaleLowerCase();
   const institutions=overviewData.nodes.filter(n=>n.kind==='institution'&&countryMatches(n.country));
+  const available=new Set(institutions.map(n=>n.id));
+  for(const id of selectedInstitutions)if(!available.has(id))selectedInstitutions.delete(id);
   const matching=institutions.filter(n=>n.label.toLocaleLowerCase().includes(term))
-    .sort((a,b)=>a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
-  $('#institution-filter').innerHTML='<option value="">All institutions in selected country</option>'+
-    matching.map(n=>`<option value="${safe(n.id)}">${safe(n.label)}</option>`).join('');
-  $('#institution-filter').value=matching.some(n=>n.id===selected)?selected:'';
-  $('#institution-count').textContent=`${matching.length.toLocaleString()} of ${institutions.length.toLocaleString()} institutions`;
+    .sort((a,b)=>Number(selectedInstitutions.has(b.id))-Number(selectedInstitutions.has(a.id))||a.label.localeCompare(b.label)||a.id.localeCompare(b.id));
+  $('#institution-filter').innerHTML=matching.map(n=>`<label class="institution-option"><input type="checkbox" value="${safe(n.id)}" ${selectedInstitutions.has(n.id)?'checked':''}><span>${safe(n.label)}</span></label>`).join('') || '<p class="control-hint">No matching institutions</p>';
+  const count=selectedInstitutions.size;
+  $('#institution-summary').textContent=count ? `${count} institution${count===1?'':'s'} selected` : 'All institutions in selected country';
+  $('#institution-clear').hidden=!count;
+  $('#institution-count').textContent=`${matching.length.toLocaleString()} of ${institutions.length.toLocaleString()} institutions${count?` · ${count} selected`:''}`;
 }
 function scopedOverview() {
-  const institution=$('#institution-filter').value;
-  const key=`${$('#country-filter').value}|${institution}|${overviewDataView}`;
+  const institutionIds=[...selectedInstitutions].sort();
+  const key=`${$('#country-filter').value}|${institutionIds.join('|')}|${overviewDataView}`;
   if (scopeData && scopeKey === key) return scopeData;
-  if (!institution) {
+  if (!institutionIds.length) {
     scopeKey=key;
     scopeData=overviewData;
     return scopeData;
   }
-  const institutions=new Set(overviewData.nodes.filter(n=>n.kind==='institution'&&countryMatches(n.country)&&(!institution||n.id===institution)).map(n=>n.id));
+  const institutions=new Set(institutionIds);
   const people=new Set();
   for(const edge of overviewData.links)if(edge.type==='affiliation'){
     const a=nodeId(edge.source),b=nodeId(edge.target);
@@ -619,14 +623,18 @@ $('#cluster-lens').addEventListener('change',()=>{
 $('#cluster-count').addEventListener('input',e=>{$('#cluster-count-value').textContent=`${e.target.value} of ${scopeData ? new Set(scopeData.nodes.map(n=>n.communities?.[$('#cluster-lens').value]).filter(c=>c && !c.derived && c.id!=='unconnected').map(c=>c.id)).size : 0}`});
 $('#cluster-count').addEventListener('change',()=>{if(overviewMode)renderOverviewSlice()});
 $('#country-filter').addEventListener('change',()=>{
-  $('#institution-search').value='';$('#institution-filter').value='';refreshInstitutions();
+  $('#institution-search').value='';selectedInstitutions.clear();
   openOverview();
 });
-$('#institution-search').addEventListener('input',()=>{
-  const previous=$('#institution-filter').value;refreshInstitutions();
-  if(previous&&!$('#institution-filter').value&&overviewMode)renderOverviewSlice();
+$('#institution-search').addEventListener('input',refreshInstitutions);
+$('#institution-filter').addEventListener('change',e=>{
+  if(!e.target.matches('input[type="checkbox"]'))return;
+  if(e.target.checked)selectedInstitutions.add(e.target.value);else selectedInstitutions.delete(e.target.value);
+  scopeData=null;scopeKey=null;refreshInstitutions();
+  if(overviewMode)renderOverviewSlice();else openOverview();
 });
-$('#institution-filter').addEventListener('change',()=>{
+$('#institution-clear').addEventListener('click',()=>{
+  selectedInstitutions.clear();scopeData=null;scopeKey=null;refreshInstitutions();
   if(overviewMode)renderOverviewSlice();else openOverview();
 });
 $('#legend').addEventListener('click',e=>{
