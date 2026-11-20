@@ -20,8 +20,10 @@ PORT = int(os.environ.get('UKIE_GRAPH_PORT', '8127'))
 OUTPUT = Path(os.environ.get('ECON_GRAPH_OUTPUT', HERE.parent / 'output'))
 OVERVIEW_FILE = OUTPUT / 'irish-economists.graphml'
 SNAPSHOT_DIR = HERE.parent / 'docs' / 'data'
+# Route/UI edits must not invalidate precomputed layouts; rebuild snapshots
+# explicitly when the graph derivation or source data changes.
 SNAPSHOT_INPUTS = (OVERVIEW_FILE, OUTPUT / 'topics.csv', OUTPUT / 'topic_cooccurs.csv',
-                   OUTPUT / 'paper_topics.csv', OUTPUT / 'authorships.csv', Path(__file__))
+                   OUTPUT / 'paper_topics.csv', OUTPUT / 'authorships.csv')
 SNAPSHOT_COUNTRIES = {'island', 'Ireland', 'Northern Ireland', 'England', 'Scotland', 'Wales', 'uk', 'all'}
 _overview = None
 _country_overviews = {}

@@ -168,7 +168,7 @@ function edgeColour(l) {
     const same=a && b && clusterOf(a)===clusterOf(b);
     const inLens=(lens==='coauthor' && l.type==='coauthor') || (lens==='topic' && (l.type==='topic' || l.type==='topic_pair')) || (lens==='institution' && l.type==='affiliation');
     if (inLens && !same && activeCluster && (clusterOf(a)===activeCluster || clusterOf(b)===activeCluster)) return '#365c4fc0';
-    return inLens ? same ? '#769b8150' : '#526f628a' : '#9daeba0b';
+    return inLens ? same ? '#5879628c' : '#405f50bf' : '#82978b24';
   }
   return l.type==='topic_pair'||l.type==='topic'?'#b3c3d9':l.type==='shared'?'#c6b5cd':'#bdcfc0';
 }
