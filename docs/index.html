@@ -6,7 +6,7 @@
   <title>UK and Ireland economists</title>
   <link rel="stylesheet" href="./style.css">
   <script src="./force-graph.js" defer></script>
-  <script src="./topic-paths.js" defer></script>
+  <script src="./research-suggestions.js" defer></script>
   <script src="./pages-adapter.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
@@ -15,7 +15,7 @@
   <div class="brand">UK and Ireland economists <span>2012–2026</span></div>
   <button id="overview" class="topbutton active" aria-pressed="true" title="Show economist network">Graph</button>
   <button id="matchmaker-tab" class="topbutton" aria-pressed="false" title="Find a potential co-author">Matchmaker</button>
-  <button id="topic-path-tab" class="topbutton" aria-pressed="false" title="Explore connections between research topics">Research gaps</button>
+  <button id="research-tab" class="topbutton" aria-pressed="false" title="Explore research suggestions">Research suggestions</button>
   <div class="searchbox">
     <select id="kind" aria-label="Search category"><option value="person">People</option><option value="institution">Institutions</option><option value="topic">Topics</option></select>
     <input id="search" type="search" placeholder="Search people, institutions or topics" autocomplete="off" aria-label="Search graph">
@@ -100,19 +100,21 @@
       <div id="match-results" aria-live="polite"></div>
     </div>
   </section>
-  <section id="topic-path-view" hidden>
-    <div class="topic-path-shell">
-      <h1>Explore research bridges</h1>
-      <p>Choose two or more topics. See the shortest supported connections and how many papers cover each topic and bridge.</p>
-      <div class="topic-path-search-wrap">
-        <label for="topic-path-search">Add a research topic</label>
-        <input id="topic-path-search" type="search" placeholder="Search topics" autocomplete="off">
-        <div id="topic-path-picks" hidden></div>
+  <section id="research-view" hidden>
+    <div class="research-shell">
+      <h1>Research suggestions</h1>
+      <p>Potentially under-connected areas of the included literature, derived from topic assignments and publication dates.</p>
+      <div class="research-tabs" role="group" aria-label="Suggestion method">
+        <button type="button" data-research-kind="weak" class="active" aria-pressed="true">Weak bridges</button>
+        <button type="button" data-research-kind="emerging" aria-pressed="false">Emerging combinations</button>
       </div>
-      <div id="topic-path-selected" aria-label="Selected topics"></div>
-      <p class="topic-path-note">Choose 2 to 8 topics. A shared-paper link means both topics were assigned to the same included paper.</p>
-      <button id="topic-path-run" class="topbutton" disabled>Find connections</button>
-      <div id="topic-path-results" aria-live="polite"></div>
+      <p id="research-method" class="research-method"></p>
+      <label for="research-search">Filter suggestions by topic name</label>
+      <input id="research-search" type="search" placeholder="Search the suggestions" autocomplete="off">
+      <p id="research-count" class="research-count"></p>
+      <div id="research-results" aria-live="polite"></div>
+      <button type="button" id="research-more" class="topbutton" hidden>Show more</button>
+      <p class="research-caveat">These are suggestions for review. OpenAlex topic classifications, the economics-primary corpus boundary and publication-date coverage affect the results.</p>
     </div>
   </section>
   <aside id="inspector">

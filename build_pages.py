@@ -69,8 +69,8 @@ class Shards:
 
 
 def main():
-    from build_topic_paths import main as build_topic_paths
-    build_topic_paths()
+    from build_research_suggestions import main as build_research_suggestions
+    build_research_suggestions()
     sys.path.insert(0, str(ROOT / 'ui'))
     from server import overview, country_overview, topic_overview, matchmaker_data, people_view
 
@@ -265,12 +265,12 @@ def main():
         for pid, n in mm_people.items()}}
     write(DATA / 'matchmaker-index.json', match_index)
 
-    for name in ('index.html', 'app.js', 'style.css', 'pages-adapter.js', 'topic-paths.js'):
+    for name in ('index.html', 'app.js', 'style.css', 'pages-adapter.js', 'research-suggestions.js'):
         shutil.copy2(ROOT / 'ui' / name, SITE / name)
     vendor = ROOT.parent.parent / 'qbit-mini-ui' / 'china-graph' / 'foam-graph.js'
     shutil.copy2(vendor, SITE / 'force-graph.js')
     html = (SITE / 'index.html').read_text(encoding='utf-8')
-    for asset in ('style.css', 'app.js', 'topic-paths.js', 'force-graph.js'):
+    for asset in ('style.css', 'app.js', 'research-suggestions.js', 'force-graph.js'):
         html = html.replace(f'/{asset}', f'./{asset}')
     html = html.replace('<script src="./app.js" defer></script>',
                         '<script src="./pages-adapter.js" defer></script>\n  <script src="./app.js" defer></script>')

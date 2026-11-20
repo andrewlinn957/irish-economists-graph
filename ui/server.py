@@ -422,8 +422,8 @@ class Handler(BaseHTTPRequestHandler):
                     body = people_view(full) if view == 'people' else full
                 elif parts[1] == 'topic-overview' and len(parts) == 2:
                     body = topic_overview()
-                elif parts[1] == 'topic-path-data' and len(parts) == 2:
-                    data = (SNAPSHOT_DIR / 'topic-path.json.gz').read_bytes()
+                elif parts[1] == 'research-suggestions' and len(parts) == 2:
+                    data = (SNAPSHOT_DIR / 'research-suggestions.json.gz').read_bytes()
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json; charset=utf-8')
                     self.send_header('Content-Encoding', 'gzip')
@@ -452,7 +452,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Content-Type', 'application/json; charset=utf-8')
             else:
                 files = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
-                         '/topic-paths.js': ('topic-paths.js', 'text/javascript'),
+                         '/research-suggestions.js': ('research-suggestions.js', 'text/javascript'),
                          '/style.css': ('style.css', 'text/css'),
                          '/force-graph.js': ('../../../qbit-mini-ui/china-graph/foam-graph.js', 'text/javascript')}
                 if path not in files:

@@ -348,7 +348,7 @@ function showGraphView() {
   document.body.classList.remove('matchmaker-mode');
   $('main').classList.remove('matchmaker-mode');
   $('#matchmaker-view').hidden = true;
-  window.hideTopicPathView?.();
+  window.hideResearchView?.();
   $('#overview').classList.add('active');
   $('#overview').setAttribute('aria-pressed','true');
   $('#matchmaker-tab').classList.remove('active');
@@ -356,7 +356,7 @@ function showGraphView() {
   requestAnimationFrame(() => { if (graph) graph.width(host.clientWidth).height(host.clientHeight); });
 }
 function showMatchmakerView() {
-  window.hideTopicPathView?.();
+  window.hideResearchView?.();
   document.body.classList.add('matchmaker-mode');
   $('main').classList.add('matchmaker-mode');
   $('#matchmaker-view').hidden = false;
@@ -613,7 +613,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { results.hi
 $('#shared').addEventListener('change', () => { if (current?.type === 'person') open('person', current.id); });
 $('#overview').addEventListener('click', () => openOverview());
 $('#matchmaker-tab').addEventListener('click', showMatchmakerView);
-$('#topic-path-tab').addEventListener('click', () => window.showTopicPathView());
+$('#research-tab').addEventListener('click', () => window.showResearchView());
 $('#cluster-lens').addEventListener('change',()=>{
   activeLens=$('#cluster-lens').value;
   activeCluster=null;
